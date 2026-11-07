@@ -2063,9 +2063,9 @@ function viewScope() {
 // ===================================================================
 
 const DEMO_BTNS = {
-  koc: ["users", "Koç olarak", "Danışanlar, seans analizi, ICF, ajan"],
-  danisan: ["trend", "Danışan olarak", "Kendi gelişimi, adımlar, eğitimler"],
-  kurum: ["building", "Kurum yöneticisi olarak", "Anonim kurum paneli"],
+  koc: ["users", "Koç", "Danışanlar, seans analizi, ICF, ajan"],
+  danisan: ["trend", "Danışan", "Kendi gelişimi, adımlar, eğitimler"],
+  kurum: ["building", "Kurum", "Anonim kurum paneli"],
 };
 
 async function showAuth() {
@@ -2090,7 +2090,7 @@ async function showAuth() {
     </div>
     <div class="auth-main"><div class="auth-box">
       <h2>${setup ? "İlk kurulum" : "Giriş yap"}</h2>
-      <p class="muted">${setup ? "İlk yönetici hesabını oluşturun." : "Hesabınızla giriş yapın."}</p>
+      ${setup ? `<p class="muted">İlk yönetici hesabını oluşturun.</p>` : ""}
       <form id="auth-form">
         ${setup ? field("Ad soyad", `<input name="name" required autocomplete="name">`) : ""}
         ${field("E-posta", `<input name="email" type="email" required autocomplete="email">`)}
@@ -2098,11 +2098,12 @@ async function showAuth() {
         <p class="form-error" id="auth-error"></p>
         <button class="btn btn-primary full">${setup ? "Hesabı oluştur ve başla" : "Giriş yap"}</button>
       </form>
-      ${st.demo_roles.length ? `<div class="divider"><span>veya örnek hesapla inceleyin</span></div>
-        <div class="demo-btns">${["koc", "danisan", "kurum"].filter((r) => st.demo_roles.includes(r)).map((r) => `
-          <button class="demo-btn" data-role="${r}">${icon(DEMO_BTNS[r][0])}<div><b>${DEMO_BTNS[r][1]}</b><small>${DEMO_BTNS[r][2]}</small></div></button>`).join("")}</div>` : ""}
-      ${setup ? "" : `<div class="divider"><span>koçun yok mu?</span></div>
-        <button class="demo-btn self-cta" id="go-register">${icon("sparkles")}<div><b>Kendi başıma kullanmak istiyorum</b><small>Kendini tanıt, sana özel planını al · 18 yaş ve üstü</small></div></button>`}
+      ${setup ? "" : `<button class="btn btn-secondary full register-btn" id="go-register">${icon("sparkles")}Hesabın yok mu? Kendi başına başla</button>`}
+      ${st.demo_roles.length ? `<div class="demo-area">
+        <span class="muted small">Örnek hesapla dene</span>
+        <div class="demo-row">${["koc", "danisan", "kurum"].filter((r) => st.demo_roles.includes(r)).map((r) => `
+          <button class="demo-chip" data-role="${r}" title="${DEMO_BTNS[r][2]}">${icon(DEMO_BTNS[r][0])}${DEMO_BTNS[r][1]}</button>`).join("")}</div>
+      </div>` : ""}
     </div></div>`;
   renderThemeButtons();
   $("#auth-form").addEventListener("submit", async (e) => {
@@ -2114,7 +2115,7 @@ async function showAuth() {
     } catch (err) { $("#auth-error").textContent = err.message; }
   });
   $("#go-register")?.addEventListener("click", () => showRegister());
-  $$(".demo-btn[data-role]", auth).forEach((b) => b.addEventListener("click", async () => {
+  $$("[data-role]", auth).forEach((b) => b.addEventListener("click", async () => {
     await sendJSON("/api/auth/demo-login", { role: b.dataset.role });
     location.hash = "";
     startApp();

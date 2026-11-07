@@ -808,3 +808,18 @@ details.week[open] > summary { margin-bottom: 4px; }
   .scale7 span { height: 36px; }
 }
 .week .card-head > .muted { white-space: nowrap; }
+
+/* Giriş ekranı: tek ana yol (giriş), altında kayıt, en altta küçük örnek hesaplar */
+.register-btn { margin-top: 12px; }
+.demo-area { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); text-align: center; }
+.demo-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.demo-chip { font: inherit; font-size: 14.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); cursor: pointer; }
+.demo-chip:hover { border-color: var(--primary); color: var(--primary); }
+.demo-chip .ic { width: 16px; height: 16px; color: var(--primary); }
+@media (max-width: 820px) {
+  .auth-points { display: none; }
+  .auth-side { padding: 22px 20px 26px; gap: 14px; }
+  .auth-side h1 { font-size: 21px; }
+  .auth-main { place-items: start center; padding-top: 24px; }
+}
