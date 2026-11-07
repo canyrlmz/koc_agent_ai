@@ -28,8 +28,8 @@ function showRegister() {
   const box = $(".auth-box");
   box.innerHTML = `
     <button class="link-btn" id="back-login">← Girişe dön</button>
-    <h2>Kendi başına başla</h2>
-    <p class="muted">Kendini tanıt, sana özel planını hazırlayalım.</p>
+    <h2>Yapay zekâ asistanıyla başla</h2>
+    <p class="muted">Koç gerekmez. Kendini anlat, asistan sana özel planını hazırlasın.</p>
     <form id="reg-form">
       ${field("Adın ya da takma adın", `<input name="name" required maxlength="80" autocomplete="given-name">`)}
       ${field("Yaşın (18+)", `<input name="age" type="number" min="18" max="110" required inputmode="numeric">`)}

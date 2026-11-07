@@ -2098,7 +2098,12 @@ async function showAuth() {
         <p class="form-error" id="auth-error"></p>
         <button class="btn btn-primary full">${setup ? "Hesabı oluştur ve başla" : "Giriş yap"}</button>
       </form>
-      ${setup ? "" : `<button class="btn btn-secondary full register-btn" id="go-register">${icon("sparkles")}Hesabın yok mu? Kendi başına başla</button>`}
+      ${setup ? "" : `<button class="self-start" id="go-register">
+          <span class="self-start-ic">${icon("bot")}</span>
+          <span><b>Koçum yok, yapay zekâ asistanıyla başla</b>
+            <small>Kendini anlat, asistan sana özel bir plan hazırlasın. Ücretsiz kayıt.</small></span>
+          ${icon("chevron")}
+        </button>`}
       ${st.demo_roles.length ? `<div class="demo-area">
         <span class="muted small">Örnek hesapla dene</span>
         <div class="demo-row">${["koc", "danisan", "kurum"].filter((r) => st.demo_roles.includes(r)).map((r) => `
