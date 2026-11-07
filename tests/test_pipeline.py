@@ -439,3 +439,124 @@ def test_org_anonymity_threshold():
     assert a["birimler"] == [("Diğer (küçük gruplar)", 2)]
     k = cluster_themes([(1, "Geri bildirim"), (2, "Geri bildirim verme"), (3, "Liderlik")])
     assert k[0]["kisi_sayisi"] == 2
+
+
+# --- Koçsuz mod (kendi kendine koçluk) ----------------------------------------------
+
+_INTAKE = {"meslek": "Muhasebeci", "yer": "sehir", "yasam": "aile", "hobiler": ["Bahçe işleri", "Tavla"],
+           "ortamlar": ["Sakin", "Doğa"], "zaman": "orta", "butce": "az", "konu": "kaygi",
+           "sorun": "Yeni insanlarla konuşurken çok geriliyorum, kalabalıkta nefesim daralıyor."}
+_TIPI = [2, 3, 6, 6, 4, 6, 6, 2, 3, 4]
+
+
+def _register(email: str, age: int = 30, **extra):
+    c = TestClient(app)
+    r = c.post("/api/auth/register", json={"name": "Deneme Kullanıcı", "email": email, "password": "kendi-sifre-1",
+                                           "age": age, "kvkk": True, "not_therapy": True, **extra})
+    return c, r
+
+
+def test_self_guided_register_rules():
+    _, r = _register("genc@test.local", age=17)
+    assert r.status_code == 400 and "18" in r.json()["detail"]
+    _, r = _register("onaysiz@test.local", kvkk=False)
+    assert r.status_code == 400
+    u, r = _register("bireysel@test.local")
+    assert r.status_code == 200
+    st = u.get("/api/auth/state").json()["user"]
+    assert st["self_guided"] is True and st["role"] == "danisan"
+    assert u.get("/api/me/self").json()["phase"] == "form"
+    assert u.get("/api/clients").status_code == 403
+    # koçun eklediği danışan koçsuz mod uçlarını kullanamaz
+    c = client.post("/api/clients", json={"name": "Koçlu Danışan", "consent": True}).json()
+    client.post(f"/api/clients/{c['id']}/account", json={"email": "koclu@test.local", "password": "danisan-sifre-2"})
+    assert _login("koclu@test.local", "danisan-sifre-2").get("/api/me/self").status_code == 403
+
+
+def test_self_guided_intake_profile_plan_and_training():
+    u, _ = _register("akis@test.local", age=55)
+    assert u.post("/api/me/self/start", json={"intake": _INTAKE, "tipi": [1, 2]}).status_code == 400  # test eksik
+    st = u.post("/api/me/self/start", json={"intake": _INTAKE, "tipi": _TIPI}).json()
+    assert st["phase"] == "sohbet" and st["personality"]["disa_doniklik"] == 2.0  # (2 + 8-6) / 2
+    assert st["messages"][-1]["sender"] == "ajan"
+
+    st = u.post("/api/me/self/chat", json={"text": "En çok toplantılarda ve düğünlerde oluyor."}).json()
+    st = u.post("/api/me/self/chat", json={"text": "Nefes egzersizi denedim, biraz iyi geldi."}).json()
+    assert st["phase"] == "onay" and st["profile"]["ozet"]
+
+    st = u.post("/api/me/self/correct", json={"text": "Aslında kalabalıktan değil, tanımadığım insanlardan geriliyorum."}).json()
+    assert st["phase"] == "onay"
+
+    st = u.post("/api/me/self/confirm").json()
+    st = u.get("/api/me/self").json()
+    assert st["phase"] == "aktif", st["error"]
+    assert len(st["plan"]["haftalar"]) == 4 and st["plan"]["baslangic"]
+    tasks = st["plan_tasks"]
+    assert len(tasks) == 12 and {t["detail"]["hafta"] for t in tasks} == {1, 2, 3, 4}
+    assert any(t["detail"]["harita_arama"] for t in tasks)
+
+    portal = u.get("/api/me/portal").json()
+    assert portal["trainings"], "kişiye özel eğitim hazırlanmalı"
+    assert portal["sessions"] == []  # tanışma kaydı seans olarak görünmez
+
+    # Görev değiştirme
+    swapped = u.post(f"/api/me/self/tasks/{tasks[0]['id']}/swap", json={"text": "Dizlerim ağrıyor"}).json()
+    assert swapped["detail"]["degisti"] is True and swapped["detail"]["hafta"] == tasks[0]["detail"]["hafta"]
+
+    # Serbest sohbet (plan sonrası)
+    st = u.post("/api/me/self/chat", json={"text": "Bugün biraz yorgunum."}).json()
+    assert st["messages"][-1]["sender"] == "ajan" and st["phase"] == "aktif"
+
+    # Koç eşleştirme isteği yöneticiye düşer
+    u.post("/api/me/self/coach")
+    assert any(r["name"] == "Deneme Kullanıcı" for r in client.get("/api/self-guided/requests").json())
+
+
+def test_self_guided_crisis_and_weekly_review():
+    from datetime import date, timedelta
+
+    from app import agent, db
+
+    u, _ = _register("kriz@test.local", age=40)
+    st = u.post("/api/me/self/start", json={"intake": {**_INTAKE, "sorun": "Bazen yaşamak istemiyorum, çok yoruldum."},
+                                            "tipi": _TIPI}).json()
+    assert st["phase"] == "kriz" and "112" in st["messages"][-1]["text"]
+    st = u.post("/api/me/self/chat", json={"text": "tamam"}).json()
+    assert st["phase"] == "kriz"  # krizde plan / soru sorulmaz
+    st = u.post("/api/me/self/resume").json()
+    assert st["phase"] == "sohbet"
+
+    # Planı tamamla
+    u.post("/api/me/self/chat", json={"text": "Toplantılarda oluyor."})
+    u.post("/api/me/self/chat", json={"text": "Bir şey denemedim."})
+    u.post("/api/me/self/confirm")
+    st = u.get("/api/me/self").json()
+    assert st["phase"] == "aktif"
+    cid = u.get("/api/auth/state").json()["user"]["client_id"]
+
+    # 1. hafta bitince ajan haftayı değerlendirir ve 2. haftanın görevlerini yeniler
+    start = date.fromisoformat(st["plan"]["baslangic"])
+    done = agent.run_for_client(cid, today=start + timedelta(days=8))
+    assert any(d["trigger"] == "haftalik:w1" for d in done)
+    week2 = [t for t in db.list_tasks(cid) if t.get("detail") and t["detail"]["hafta"] == 2]
+    assert week2 and all("9. hafta" in t["text"] for t in week2)  # mock yeni görevleri yazdı
+    assert any(m["kind"] == "haftalik" for m in u.get("/api/me/portal").json()["messages"])
+
+    # Koçsuz modda düşük ruh hali uyarısı kullanıcının kendisine gider
+    u.post("/api/me/checkins", json={"mood": 1, "note": "berbat bir gün"})
+    agent.run_for_client(cid)
+    assert any(a["kind"] == "uyari" and a["target"] == "danisan" for a in db.list_agent_actions(cid))
+
+    # Check-in notunda kriz ifadesi -> destek akışı
+    u.post("/api/me/checkins", json={"mood": 1, "note": "kendime zarar vermek istiyorum"})
+    assert u.get("/api/me/self").json()["phase"] == "kriz"
+
+
+def test_safety_patterns():
+    from app.safety import is_crisis
+
+    assert is_crisis("Bazen ÖLMEK İSTİYORUM")
+    assert is_crisis("intihar etmeyi düşündüm")
+    assert is_crisis("kendimi öldürmek")
+    assert not is_crisis("Sınavdan çok korkuyorum")
+    assert not is_crisis("Yeni insanlarla tanışmak istiyorum")

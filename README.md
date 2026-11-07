@@ -41,6 +41,15 @@ Ajanlar zincir gibi çalışır: analiz ajanının bulduğu gelişim alanı müf
 2. Paydaş gözlemi: danışanın onayıyla bir yakınına giden, girişsiz, tek seferlik bağlantı
 3. Sonraki seansta planın izi
 
+**Koçsuz mod (kendi kendine koçluk)**
+- Koçu olmayan kullanıcı giriş ekranından kendisi kayıt olur (18 yaş ve üstü, KVKK rızası, “terapi değildir” onayı)
+- 5 adımda kendini tanıtır: temel bilgiler, zevkler, 10 soruluk kişilik testi (TIPI), zaman ve imkânlar, sorun
+- Asistan arkadaş gibi konuşur: kısa mesajlar, her seferinde tek soru, en fazla 6 soru; sonra “Seni böyle anladım” profili (kullanıcı onaylar ya da düzeltir)
+- Yaşa, karaktere, zevklere, imkânlara ve sorunun şiddetine göre 4 haftalık, kolaydan zora giden plan; her görevde “neden sana uygun”, zorluk, süre ve haritada arama bağlantısı; “Bu bana uymaz” ile görev değiştirme
+- Her hafta sonunda ajan haftayı değerlendirir, gelecek haftayı kolaylaştırır ya da zorlaştırır; kişiye özel eğitim ve hatırlatmalar mevcut sistemden gelir
+- **Güvenlik:** kendine zarar / intihar ifadesi (kural tabanlı + yapay zekâ) görülürse plan durur, sabit destek mesajı ve 112 gösterilir; ağır belirtilerde uzman önerilir; tanı ve ilaç konuşulmaz
+- İstenirse “Bir koçla eşleş” ile yöneticiye istek gider; koç atanınca profil ve plan koçun ekranında görünür
+
 **Roller:** yönetici, koç (yalnızca kendi danışanları), danışan (kendi gelişimi; ICF ve transkript görünmez), kurum yöneticisi (anonim panel). KVKK açık rızası olmadan kayıt yüklenemez.
 
 **Arayüz:** açık/koyu tema, telefona uyumlu, daraltılabilir menü.
@@ -75,7 +84,7 @@ Tüm ayarlar ve açıklamaları `.env.example` dosyasında. **`.env` dosyası as
 .venv\Scripts\python -m pytest -q
 ```
 
-23 uçtan uca test; hem SQLite hem PostgreSQL üzerinde geçer.
+27 uçtan uca test (SQLite). Koçsuz moddan önceki 23 test PostgreSQL üzerinde de denendi.
 
 ## Klasör yapısı
 
@@ -89,6 +98,8 @@ app/
   training.py    Mikro-eğitim üretimi
   research.py    OpenAlex bilimsel kaynak tarama
   agent.py       Davranış takip ajanı, davranış kanıtı
+  selfcoach.py   Koçsuz mod: tanışma sohbeti, profil, kişiye özel plan, haftalık ayar
+  safety.py      Koçsuz mod güvenlik kuralları (kriz tespiti)
   notify.py      Uygulama içi, e-posta, WhatsApp bildirimleri
   meetingbot.py  Zoom / Teams / Meet toplantı botu
   insights.py    Paneller, kurumsal içgörü ve anonimleştirme

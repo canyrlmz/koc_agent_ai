@@ -133,6 +133,29 @@ CREATE TABLE IF NOT EXISTS notifications (        -- giden kutusu: uygulama içi
     detail TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS self_profiles (        -- koçsuz mod: kullanıcının kendini tanıtması ve ajanın çıkardığı profil
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL UNIQUE REFERENCES clients(id),
+    phase TEXT NOT NULL DEFAULT 'form',           -- form / sohbet / onay / plan_hazirlaniyor / aktif / kriz
+    intake_json TEXT,                             -- form cevapları (temel, zevkler, imkânlar, sorun)
+    personality_json TEXT,                        -- 10 soruluk kişilik testi (TIPI) puanları
+    profile_json TEXT,                            -- ajanın "seni böyle anladım" profili
+    plan_json TEXT,                               -- 4 haftalık kişiye özel plan
+    safety_json TEXT,                             -- son güvenlik değerlendirmesi
+    questions_asked INTEGER NOT NULL DEFAULT 0,
+    coach_request INTEGER NOT NULL DEFAULT 0,     -- kullanıcı bir koçla eşleşmek istedi
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS self_messages (        -- koçsuz mod sohbeti (kullanıcı <-> ajan)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id),
+    sender TEXT NOT NULL,                         -- kullanici / ajan
+    text TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'sohbet',          -- sohbet / kriz
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meeting_bots (         -- Zoom / Teams / Meet toplantısına katılan kayıt botu
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     client_id INTEGER NOT NULL REFERENCES clients(id),
@@ -162,12 +185,15 @@ CLIENT_COLUMNS = {
     "consent_at": "TEXT",
     "coach_id": "INTEGER",                               # danışanın koçu (users.id)
     "notify_channels": "TEXT NOT NULL DEFAULT ''",       # danışanın izin verdiği kanallar: "eposta,whatsapp"
+    "self_guided": "INTEGER NOT NULL DEFAULT 0",         # koçsuz mod: kullanıcı kendisi kayıt oldu
+    "age": "INTEGER",
 }
 CLIENT_FIELDS = ("name", "focus_area", *[c for c in CLIENT_COLUMNS if c != "consent_at"])
 
 JSON_FIELDS = (
     "transcript_json", "metrics_json", "report_json", "icf_json",
     "area_json", "papers_json", "content_json", "analysis_json", "visual_json",
+    "intake_json", "personality_json", "profile_json", "plan_json", "safety_json", "detail_json",
 )
 
 
@@ -272,6 +298,9 @@ def init_db() -> None:
         session_cols = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
         if "visual_json" not in session_cols:  # görsel (video) seans analizi
             conn.execute("ALTER TABLE sessions ADD COLUMN visual_json TEXT")
+        task_cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
+        if "detail_json" not in task_cols:  # koçsuz mod: görevin nedeni, zorluğu, haftası, harita araması
+            conn.execute("ALTER TABLE tasks ADD COLUMN detail_json TEXT")
 
 
 def _now() -> str:
@@ -322,10 +351,10 @@ def update_client(client_id: int, **fields) -> dict:
 _CLIENT_SELECT = """
     SELECT c.*, o.name AS organization_name, o.org_type AS organization_type,
       (SELECT u.name FROM users u WHERE u.id = c.coach_id) AS coach_name,
-      (SELECT COUNT(*) FROM sessions s WHERE s.client_id = c.id) AS session_count,
+      (SELECT COUNT(*) FROM sessions s WHERE s.client_id = c.id AND s.status != 'oz') AS session_count,
       (SELECT json_extract(s.icf_json, '$.ortalama') FROM sessions s
          WHERE s.client_id = c.id AND s.status = 'tamamlandi' AND s.icf_json IS NOT NULL ORDER BY s.id DESC LIMIT 1) AS last_icf,
-      (SELECT MAX(s.created_at) FROM sessions s WHERE s.client_id = c.id) AS last_session_at,
+      (SELECT MAX(s.created_at) FROM sessions s WHERE s.client_id = c.id AND s.status != 'oz') AS last_session_at,
       (SELECT COUNT(*) FROM agent_actions a WHERE a.client_id = c.id AND a.kind = 'uyari'
          AND a.applied = 1 AND a.created_at >= datetime('now', 'localtime', '-7 days')) AS alert_count
     FROM clients c LEFT JOIN organizations o ON o.id = c.organization_id
@@ -449,7 +478,7 @@ def list_sessions(client_id: int) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
             """SELECT id, client_id, title, source, status, error, created_at, report_json, icf_json
-               FROM sessions WHERE client_id = ? ORDER BY id DESC""",
+               FROM sessions WHERE client_id = ? AND status != 'oz' ORDER BY id DESC""",
             (client_id,),
         ).fetchall()
         return [_row(r) for r in rows]
@@ -743,3 +772,56 @@ def list_meeting_bots(client_id: int | None = None, active_only: bool = False) -
 def count(table: str, where: str = "", params: tuple = ()) -> int:
     with connect() as conn:
         return conn.execute(f"SELECT COUNT(*) AS n FROM {table} {where}", params).fetchone()["n"]
+
+
+# --- Koçsuz mod (kendi kendine koçluk) -------------------------------------------
+
+
+def get_self_profile(client_id: int) -> dict | None:
+    with connect() as conn:
+        return _row(conn.execute("SELECT * FROM self_profiles WHERE client_id = ?", (client_id,)).fetchone())
+
+
+def create_self_profile(client_id: int) -> dict:
+    _insert("self_profiles", {"client_id": client_id, "created_at": _now(), "updated_at": _now()})
+    return get_self_profile(client_id)
+
+
+def update_self_profile(client_id: int, **fields) -> dict:
+    for key in ("intake", "personality", "profile", "plan", "safety"):
+        if key in fields:
+            value = fields.pop(key)
+            fields[f"{key}_json"] = json.dumps(value, ensure_ascii=False) if value is not None else None
+    fields["updated_at"] = _now()
+    with connect() as conn:
+        conn.execute(f"UPDATE self_profiles SET {', '.join(f'{k} = ?' for k in fields)} WHERE client_id = ?",
+                     (*fields.values(), client_id))
+    return get_self_profile(client_id)
+
+
+def add_self_message(client_id: int, sender: str, text: str, kind: str = "sohbet") -> dict:
+    return _get("self_messages", _insert("self_messages", {
+        "client_id": client_id, "sender": sender, "text": text, "kind": kind, "created_at": _now()}))
+
+
+def list_self_messages(client_id: int, limit: int = 200) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM self_messages WHERE client_id = ? ORDER BY id DESC LIMIT ?",
+                            (client_id, limit)).fetchall()
+        return [_row(r) for r in reversed(rows)]
+
+
+def create_plan_task(client_id: int, text: str, due_date: str, detail: dict) -> dict:
+    return _get("tasks", _insert("tasks", {
+        "client_id": client_id, "session_id": None, "text": text, "status": "acik", "due_date": due_date,
+        "detail_json": json.dumps(detail, ensure_ascii=False), "created_at": _now(), "updated_at": _now()}))
+
+
+def replace_task(task_id: int, text: str, detail: dict) -> None:
+    _update("tasks", task_id, {"text": text, "detail_json": json.dumps(detail, ensure_ascii=False), "status": "acik"})
+
+
+def self_guided_requests() -> list[dict]:
+    """Koçla eşleşmek isteyen koçsuz mod kullanıcıları (yönetici görür)."""
+    return all_rows("""SELECT c.id, c.name, c.age, p.updated_at FROM self_profiles p JOIN clients c ON c.id = p.client_id
+                       WHERE p.coach_request = 1 AND c.coach_id IS NULL ORDER BY p.updated_at DESC""")

@@ -201,3 +201,73 @@ class PreSessionBrief(BaseModel):
     takip_edilecek_konular: list[str] = Field(description="Önceki görevler ve açık kalan konular")
     onerilen_sorular: list[str] = Field(description="Seansta sorulabilecek güçlü, açık uçlu sorular")
     dikkat_noktalari: list[str] = Field(description="Koçun dikkat etmesi gereken örüntüler veya riskler")
+
+
+# --- Koçsuz mod (kendi kendine koçluk) ---------------------------------------------
+
+Hitap = Literal["sen", "siz"]
+Risk = Literal["yok", "dusuk", "yuksek"]
+
+
+class IntakeTurn(BaseModel):
+    mesaj: str = Field(description="En fazla 2 kısa cümle: kısa bir anlayış + (bilgi eksikse) TEK soru.")
+    yeterli_bilgi: bool = Field(description="Kişiye özel plan yapmak için yeterli bilgi toplandı mı")
+    risk: Risk = Field(description="yuksek: kendine zarar verme, intihar ya da başkasına zarar verme ifadesi var; "
+                                   "dusuk: belirgin sıkıntı var ama tehlike yok; yok: risk yok")
+    hitap: Hitap = Field(description="Kullanıcı 'sen' diliyle mi 'siz' diliyle mi konuşuyor")
+
+
+class SelfProfile(BaseModel):
+    ozet: str = Field(description="'Seni böyle anladım' özeti, kullanıcıya hitaben 2-3 kısa, sade cümle")
+    yas_donemi: str = Field(description="Hayat dönemi, ör. 'genç yetişkin, ilk iş arayışı'")
+    karakter: list[str] = Field(description="En fazla 3 özellik, her biri 1-3 kelime")
+    zevkler: list[str] = Field(description="En fazla 4 madde, her biri 1-3 kelime")
+    ana_sorun: str = Field(description="Çalışılacak ana konu, tek cümle")
+    tetikleyiciler: list[str] = Field(description="Sorunun arttığı durumlar; en fazla 3 madde, her biri 1-4 kelime")
+    guclu_yonler: list[str] = Field(description="Güçlü yönleri; en fazla 3 madde, her biri 1-4 kelime")
+    hedef: str = Field(description="4 hafta sonundaki somut hedef, en fazla 12 kelime")
+    zorlanma: int = Field(description="Sorunun hayatını ne kadar zorladığı, 1-10")
+    uzman_onerisi: bool = Field(description="Belirtiler ağır görünüyor ve bir ruh sağlığı uzmanına yönlendirilmeli mi")
+    uzman_gerekcesi: str = Field(description="Uzman önerildiyse nedeni, tek kısa ve nazik cümle; önerilmediyse boş")
+    hitap: Hitap
+
+
+class PlanTask(BaseModel):
+    baslik: str = Field(description="En fazla 6 kelimelik eylem; ör. 'Parkta biriyle selamlaş'")
+    aciklama: str = Field(description="Nasıl yapılacağı: tek kısa cümle, en fazla 15 kelime")
+    neden: str = Field(description="NEDEN bu kişiye uygun: tek kısa cümle, en fazla 12 kelime; zevkine, karakterine veya imkânına somut atıf")
+    zorluk: int = Field(description="1 (çok kolay) - 5 (zor)")
+    sure_dk: int = Field(description="Tahmini süre, dakika")
+    yer_turu: str = Field(description="Gidilecek yerin türü, ör. 'halk kütüphanesi'; evde yapılıyorsa boş")
+    harita_arama: str = Field(description="Haritada aranacak kısa ifade (ör. 'halk kütüphanesi', 'satranç kulübü'); mekân gerekmiyorsa boş. "
+                                          "Gerçek mekân ADI yazma, yalnızca tür.")
+
+
+class PlanWeek(BaseModel):
+    hafta: int
+    tema: str = Field(description="Haftanın teması, 2-4 kelime")
+    gorevler: list[PlanTask] = Field(description="3-4 görev")
+
+
+class SelfPlan(BaseModel):
+    baslik: str = Field(description="Planın kısa adı, en fazla 5 kelime")
+    giris: str = Field(description="Kullanıcıya hitaben 1-2 kısa, sade cümle; süslü ve abartılı ifade yok")
+    yontem: str = Field(description="Planın dayandığı bilimsel yaklaşım, tek kısa cümle (ör. kademeli yüzleşme)")
+    haftalar: list[PlanWeek] = Field(description="Tam olarak 4 hafta, kolaydan zora")
+    egitim_konusu: DevelopmentArea = Field(description="Kişiye özel mikro-eğitim hazırlanacak konu; kanit alanına kullanıcının kendi cümlesini yaz")
+
+
+class TaskSwap(BaseModel):
+    gorev: PlanTask
+    mesaj: str = Field(description="Tek kısa cümle: neden bu yeni görevi seçtin")
+
+
+class WeeklyReview(BaseModel):
+    mesaj: str = Field(description="Haftanın değerlendirmesi, en fazla 2 kısa cümle; yargılamadan, cesaretlendirerek")
+    ayar: Literal["kolaylastir", "ayni", "zorlastir"] = Field(description="Gelecek haftanın zorluğu nasıl ayarlanmalı")
+    sonraki_hafta: list[PlanTask] = Field(description="Gelecek haftanın 3-4 görevi (ayara göre yeniden yazılmış)")
+
+
+class ChatReply(BaseModel):
+    mesaj: str = Field(description="Kullanıcıya cevap, en fazla 3 kısa cümle")
+    risk: Risk

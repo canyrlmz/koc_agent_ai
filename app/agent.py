@@ -47,7 +47,14 @@ TRIGGER_INFO = {
     "plan": ("danisan", "Eğer–o zaman planı takibi: planın kontrol günü geldi. Planı hatırlat, durumun yaşanıp "
                         "yaşanmadığını ve ne yaptığını yargılamadan sor; cevabını Farkora'daki 'Planlarım' bölümüne "
                         "yazmaya davet et. Yapamadıysa bunun da öğretici olduğunu hissettir."),
+    "haftalik": ("danisan", "Koçsuz mod haftalık değerlendirme: hafta bitti, gelecek haftanın görevleri ayarlanacak"),
 }
+
+SELF_GUIDED_NOTE = (
+    "ÖNEMLİ: Bu kullanıcı KOÇSUZ MODDA (kendi kendine koçluk); insan koçu yok. 'uyari' tetiğinde mesajı doğrudan "
+    "kullanıcıya yaz: sıcak, destekleyici ve sade ol; ruh hali çok düşükse güvendiği biriyle konuşmasını ve bir ruh "
+    "sağlığı uzmanına başvurmayı nazikçe öner, tehlikedeyse 112'yi hatırlat. Kullanıcıya 'sen' diye hitap et."
+)
 
 _lock = threading.Lock()  # zamanlayıcı ve olaylar aynı anda çalışırsa sırayla işlensin
 
@@ -85,10 +92,21 @@ def detect_triggers(client_id: int, today: date | None = None) -> list[dict]:
             add(f"hatirlatma:t{t['id']}", "hatirlatma", f"Görevin son günü {t['due_date']}: {t['text']}",
                 task_id=t["id"])
 
-    if sessions:
-        last_session_day = datetime.fromisoformat(sessions[-1]["created_at"]).date()
+    self_profile = db.get_self_profile(client_id)
+    if self_profile and self_profile["phase"] == "kriz":
+        return []  # kriz anında hatırlatma / görev mesajı gönderilmez
+    plan_start = None
+    if self_profile and self_profile["plan"] and self_profile["phase"] == "aktif":
+        plan_start = date.fromisoformat(self_profile["plan"]["baslangic"])
+        from .selfcoach import due_weeks
+
+        for n in due_weeks(client_id, today):
+            add(f"haftalik:w{n}", "haftalik", f"{n}. hafta bitti.", week=n)
+
+    if sessions or plan_start:
+        last_session_day = datetime.fromisoformat(sessions[-1]["created_at"]).date() if sessions else None
         last_checkin_day = datetime.fromisoformat(checkins[-1]["created_at"]).date() if checkins else None
-        quiet_since = max(d for d in (last_session_day, last_checkin_day) if d)
+        quiet_since = max(d for d in (last_session_day, last_checkin_day, plan_start) if d)
         silent_days = (today - quiet_since).days
         if silent_days >= 7:  # sessizliğin her tam haftası için en fazla bir davet
             add(f"checkin:{quiet_since}:h{silent_days // 7}", "checkin", f"{silent_days} gündür haber yok.")
@@ -140,8 +158,9 @@ def decide(client: dict, triggers: list[dict]) -> AgentPlan:
         f"anlamı: {TRIGGER_INFO[t['kind']][1]} | ayrıntı: {t['detail']}"
         for t in triggers
     )
+    note = f"{SELF_GUIDED_NOTE}\n\n" if client.get("self_guided") else ""
     prompt = (
-        f"=== DANIŞAN DURUMU ===\n{_context(client)}\n\n"
+        f"{note}=== DANIŞAN DURUMU ===\n{_context(client)}\n\n"
         f"=== ŞU AN AKTİF TETİKLER ===\n{trigger_lines}\n\n"
         "Her tetik için karar ver. Aynı gün danışana birden fazla mesaj gidecekse bunları "
         "tek bir doğal mesajda birleştirmeyi düşün: birini uygula, diğerlerini 'birleştirildi' "
@@ -164,16 +183,19 @@ def run_for_client(client_id: int, today: date | None = None) -> list[dict]:
     with _lock:
         client = db.get_client(client_id)
         triggers = detect_triggers(client_id, today)
+        done = _run_weekly(client, [t for t in triggers if t["kind"] == "haftalik"])
+        triggers = [t for t in triggers if t["kind"] != "haftalik"]
         if not triggers:
-            return []
+            return done
         plan = decide(client, triggers)
         decisions = {d.tetik_kodu: d for d in plan.kararlar}
-        done = []
         for t in triggers:
             d = decisions.get(t["key"])
             if d is None:  # model bu tetiğe karar vermediyse kaydetme; sonraki turda yeniden denenir
                 continue
             target = TRIGGER_INFO[t["kind"]][0]
+            if client.get("self_guided") and target == "koc" and t["kind"] == "uyari":
+                target = "danisan"  # koçsuz modda koç yok: destek mesajı kullanıcının kendisine gider
             message = d.mesaj if d.uygula else ""
             if not db.add_agent_action(client_id, t["key"], t["kind"], target, d.uygula, message, d.gerekce):
                 continue  # başka bir çalışma bu tetiği az önce işledi
@@ -190,6 +212,20 @@ def run_for_client(client_id: int, today: date | None = None) -> list[dict]:
 
     for training_id in trainings_to_generate:
         generate_training(training_id)
+    return done
+
+
+def _run_weekly(client: dict, triggers: list[dict]) -> list[dict]:
+    """Koçsuz mod: biten haftayı değerlendir, gelecek haftayı ayarla, kullanıcıya kısa mesaj gönder."""
+    from .selfcoach import weekly_review
+
+    done = []
+    for t in triggers:
+        message = weekly_review(client["id"], t["week"])
+        if db.add_agent_action(client["id"], t["key"], "haftalik", "danisan", True, message,
+                               f"{t['week']}. hafta bitti; gelecek hafta kullanıcının durumuna göre ayarlandı."):
+            deliver(client, "danisan", message, db.agent_action_id(client["id"], t["key"]))
+            done.append({"trigger": t["key"], "applied": True})
     return done
 
 

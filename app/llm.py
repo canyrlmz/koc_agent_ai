@@ -369,4 +369,46 @@ def _mock(schema: type[T], prompt: str) -> T:
                       "Sonraki seansta planın ilk denemesinin nasıl geçtiğini sorun.",
         )
 
+    if schema is schemas.IntakeTurn:
+        import re
+
+        asked = int((re.search(r"sorulan soru sayısı: (\d+)", prompt) or [0, 0])[1])
+        if asked >= 2:
+            return schemas.IntakeTurn(mesaj="(Örnek) Teşekkür ederim, seni daha iyi tanıdım. Şimdi senin için kısa bir özet hazırlıyorum.",
+                                      yeterli_bilgi=True, risk="yok", hitap="sen")
+        questions = ["(Örnek) Bunu anlattığın için teşekkürler, kolay değil. Bu his en çok hangi durumlarda artıyor?",
+                     "(Örnek) Anlıyorum. Daha önce bununla başa çıkmak için ne denedin, işe yarayan bir şey oldu mu?"]
+        return schemas.IntakeTurn(mesaj=questions[asked], yeterli_bilgi=False, risk="yok", hitap="sen")
+
+    if schema is schemas.SelfProfile:
+        return schemas.SelfProfile(
+            ozet="(Örnek) Seni şöyle anladım: yeni insanlarla tanışırken kaygılanıyorsun ama sakin ortamlarda rahatsın.",
+            yas_donemi="(Örnek) genç yetişkin", karakter=["içe dönük", "düşünceli"], zevkler=["doğa yürüyüşü", "kitap"],
+            ana_sorun="Sosyal ortamlarda kaygı", tetikleyiciler=["kalabalık ortamlar"], guclu_yonler=["sorumluluk sahibi"],
+            hedef="Haftada en az iki kez yeni biriyle kısa sohbet etmek", zorlanma=6, uzman_onerisi=False,
+            uzman_gerekcesi="", hitap="sen")
+
+    def _task(n: int, i: int) -> schemas.PlanTask:
+        return schemas.PlanTask(baslik=f"(Örnek) {n}. hafta görev {i}", aciklama="Kısa ve somut bir adım.",
+                                neden="Sakin ortamları sevdiğin için.", zorluk=min(5, n), sure_dk=15,
+                                yer_turu="park" if i == 1 else "", harita_arama="park" if i == 1 else "")
+
+    if schema is schemas.SelfPlan:
+        return schemas.SelfPlan(
+            baslik="(Örnek) Adım adım rahatlık", giris="Küçük adımlarla başlayacağız.",
+            yontem="Kademeli yüzleşme: kolaydan zora küçük adımlar.",
+            haftalar=[schemas.PlanWeek(hafta=n, tema=f"Hafta {n}", gorevler=[_task(n, i) for i in range(1, 4)]) for n in range(1, 5)],
+            egitim_konusu=schemas.DevelopmentArea(baslik="Sosyal kaygıyla başa çıkma", aciklama="Yeni insanlarla tanışırken kaygı.",
+                                                  kanit="“yeni biriyle konuşurken ellerim terliyor”"))
+
+    if schema is schemas.TaskSwap:
+        return schemas.TaskSwap(gorev=_task(1, 9), mesaj="(Örnek) Tamam, sana daha uygun bir görev seçtim.")
+
+    if schema is schemas.WeeklyReview:
+        return schemas.WeeklyReview(mesaj="(Örnek) Bu hafta güzel adımlar attın.", ayar="ayni",
+                                    sonraki_hafta=[_task(9, i) for i in range(1, 4)])
+
+    if schema is schemas.ChatReply:
+        return schemas.ChatReply(mesaj="(Örnek) Seni duyuyorum. Bugün küçük bir adım atmaya ne dersin?", risk="yok")
+
     raise LLMError(f"Mock cevap tanımlı değil: {schema.__name__}")

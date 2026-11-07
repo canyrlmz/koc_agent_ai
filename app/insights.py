@@ -66,7 +66,7 @@ def dashboard(coach_id: int | None = None) -> dict:
     f, p = ("AND c.coach_id = ?", (coach_id,)) if coach_id is not None else ("", ())
     sessions = db.all_rows(
         f"""SELECT s.id, s.client_id, s.title, s.status, s.created_at, s.icf_json, c.name AS client_name
-            FROM sessions s JOIN clients c ON c.id = s.client_id WHERE 1=1 {f} ORDER BY s.id DESC""", p
+            FROM sessions s JOIN clients c ON c.id = s.client_id WHERE s.status != 'oz' {f} ORDER BY s.id DESC""", p
     )
     month_start = today.replace(day=1).isoformat()
     tasks = db.all_rows(

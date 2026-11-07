@@ -126,16 +126,18 @@ const NAV = {
     ["#/ajanlar", "bot", "Yapay Zekâ Ajanları"], ["#/kapsam", "clipboard", "Proje Kapsamı"]],
   danisan: [["#/gelisim", "trend", "Gelişimim"]],
   kurum: [["#/kurum-panel", "building", "Kurum Paneli"]],
+  bireysel: [["#/gelisim", "trend", "Gelişimim"], ["#/asistan", "message", "Asistanım"]],  // koçsuz mod
 };
 const HOME = { admin: "#/panel", koc: "#/panel", danisan: "#/gelisim", kurum: "#/kurum-panel" };
 // Hangi rotaya hangi roller girebilir
-const ROUTE_ROLES = { gelisim: ["danisan"], "kurum-panel": ["kurum"], kullanicilar: ["admin"], egitim: ["admin", "koc", "danisan"] };
+const ROUTE_ROLES = { gelisim: ["danisan"], "kurum-panel": ["kurum"], kullanicilar: ["admin"], egitim: ["admin", "koc", "danisan"],
+  basla: ["danisan"], asistan: ["danisan"] };
 
 function renderNav() {
   const hash = location.hash || HOME[ME.role];
   const section = { danisan: "#/danisanlar", seans: "#/danisanlar", portal: "#/danisanlar", kurum: "#/kurumlar",
     egitim: ME.role === "danisan" ? "#/gelisim" : "#/danisanlar" }[hash.split("/")[1]] || hash.split("/").slice(0, 2).join("/");
-  $("#nav").innerHTML = NAV[ME.role].map(([href, ic, label]) =>
+  $("#nav").innerHTML = (ME.self_guided ? NAV.bireysel : NAV[ME.role]).map(([href, ic, label]) =>
     `<a href="${href}" class="${section === href ? "active" : ""}" title="${label}">${icon(ic)}<span>${label}</span></a>`).join("");
   $("#brand-link").href = HOME[ME.role];
   $("#user-box").innerHTML = `
@@ -183,6 +185,8 @@ const ROUTES = [
   [/^#\/kullanicilar$/, () => viewUsers()],
   [/^#\/gelisim(?:\/(\w+))?$/, (m) => viewMyProgress(m[1] || "ozet")],
   [/^#\/kurum-panel$/, () => viewOrgPanel()],
+  [/^#\/basla$/, () => viewSelfStart()],
+  [/^#\/asistan$/, () => viewSelfChat()],
 ];
 
 async function route() {
@@ -307,7 +311,7 @@ async function clientForm(existing = null) {
         ${[["eposta", "📧 E-posta"], ["whatsapp", "💬 WhatsApp"]].map(([k, l]) => `<label class="pick-check"><input type="checkbox" name="notify_channels" value="${k}"
           ${(c.notify_channels || "").split(",").includes(k) ? "checked" : ""}><span>${l}</span></label>`).join("")}
       </div>
-      <p class="muted small">Ajanın takip mesajları her zaman uygulamaya düşer. Danışan izin verdiyse seçilen kanallardan da gönderilir.</p>
+      <p class="muted small">Mesajlar her zaman uygulamaya düşer; izin varsa bu kanallardan da gider.</p>
     </fieldset>
     <label class="consent"><input type="checkbox" name="consent" ${c.consent ? "checked" : ""}>
       <span><b>KVKK açık rızası alındı.</b> Rıza olmadan kayıt yüklenemez.</span></label>`,
@@ -358,7 +362,7 @@ function uploadSessionForm(client) {
           <button type="button" data-vsrc="ekran" class="active">🖥️ Ekran (Zoom / Teams)</button>
           <button type="button" data-vsrc="kamera">📷 Kamera</button>
         </div>
-        <p class="muted small rec-vsrc-note">Online seans için: Zoom/Teams penceresini veya tüm ekranı seçin, “sesi paylaş” kutusunu işaretleyin. Mikrofonunuz da eklenir.</p>
+        <p class="muted small rec-vsrc-note">Zoom/Teams penceresini seçin ve “sesi paylaş”ı işaretleyin.</p>
         <video class="rec-video" muted playsinline hidden></video>
         <p class="rec-warn" hidden></p>` : ""}
       <div class="rec-time">00:00</div>
@@ -496,7 +500,7 @@ function uploadSessionForm(client) {
       r.ctx?.close(); r.ctx = null; r.mixCtx?.close(); r.mixCtx = null; r.raw = [];
     };
     const VSRC_NOTES = {
-      ekran: "Online seans için: Zoom/Teams penceresini veya tüm ekranı seçin, “sesi paylaş” kutusunu işaretleyin. Mikrofonunuz da eklenir.",
+      ekran: "Zoom/Teams penceresini seçin ve “sesi paylaş”ı işaretleyin.",
       kamera: "Yüz yüze seans için bilgisayar kamerası ve mikrofonu kullanılır.",
     };
     $$("[data-vsrc]", box).forEach((b) => b.addEventListener("click", () => {
@@ -750,7 +754,7 @@ async function viewClients() {
       ${rows.map((c) => `<tr data-href="#/danisan/${c.id}">
         <td><div class="person">${avatar(c.name)}<div><b>${esc(c.name)}</b><small>${esc(c.role_title || c.email || "")}</small></div></div></td>
         <td>${c.organization_name ? `${esc(c.organization_name)}<small>${esc(c.unit)}</small>` : `<span class="muted">Bağımsız</span>`}</td>
-        <td><span class="tag">${CLIENT_TYPE[c.client_type] || "Bireysel"}</span></td>
+        <td><span class="tag">${c.self_guided ? "Kendi başına" : CLIENT_TYPE[c.client_type] || "Bireysel"}</span></td>
         <td>${esc(c.focus_area || "—")}</td><td>${c.session_count}</td>
         <td><b class="score ${scoreClass(c.last_icf)}">${c.last_icf ?? "—"}</b></td>
         <td class="muted">${c.last_session_at ? fmtDate(c.last_session_at, false) : "—"}</td>
@@ -825,6 +829,7 @@ function tabOverview(body, { c, ag, trainings }) {
       ${kpi("Eğitim", trainings.length, "kişiye özel", "book")}
     </div>
     ${alerts.map((a) => `<div class="banner banner-err">${icon("alert")}<div><b>Ajan uyarısı</b><p>${esc(a.message)}</p></div></div>`).join("")}
+    ${c.self ? selfCoachCard(c.self) : ""}
     <div class="grid-2">
       <section class="card">
         <div class="card-head"><h2>Son seans</h2>${last ? `<a class="link" href="#/seans/${last.id}">Raporu aç</a>` : ""}</div>
@@ -870,7 +875,7 @@ function tabTrainings(body, { trainings }) {
       <div class="tile-body"><b>${esc(t.title || t.area.baslik)}</b><small>${esc(t.area.baslik)}</small></div>
       <div class="tile-foot">${badge(t.status)}<span class="muted small">${fmtDate(t.created_at, false)}</span></div>
     </a>`).join("")}</div>`
-    : `<section class="card">${empty("book", "Henüz eğitim yok", "Seans analizinden sonra ajan otomatik hazırlar. Seans raporundaki gelişim alanlarından da oluşturabilirsiniz.")}</section>`;
+    : `<section class="card">${empty("book", "Henüz eğitim yok", "Seans analizinden sonra otomatik hazırlanır.")}</section>`;
 }
 
 function tabImages(body, { c, images }) {
@@ -1570,7 +1575,7 @@ async function viewAgents() {
     <section class="card"><h2>Bağlantılar</h2>
       <div class="chips">${chip(true, "Uygulama içi mesaj")}${chip(ch.eposta, "E-posta")}${chip(ch.whatsapp, "WhatsApp")}
         <span class="tag ${d.toplanti_botu === "recall" ? "tag-ok" : ""}">Toplantı botu: ${d.toplanti_botu === "recall" ? "Recall.ai bağlı" : "simülasyon"}</span></div>
-      <p class="muted small">Bağlı olmayan kanallarda mesaj gönderilmez, giden kutusuna “simüle” olarak yazılır. Ayarlar .env dosyasında.</p></section>`;
+      <p class="muted small">Bağlı olmayan kanallar “simüle” görünür.</p></section>`;
 }
 
 // ===================================================================
@@ -1599,7 +1604,7 @@ function tabEvidence(body, { c, ev }) {
       ${kpi("Seansta kanıt", ev.session_reviews.filter((r) => r.bahsedildi).length, `${ev.session_reviews.length} değerlendirme`, "mic")}
     </div>
     <div class="banner banner-info">${icon("shield")}<div><b>Üç kaynaklı doğrulama</b>
-      <p>Danışanın kendi beyanı, izin verdiği bir paydaşın gözlemi ve sonraki seansta anlattıkları birlikte değerlendirilir. Gözlemci yalnızca danışanın adını ve denediği davranışı görür.</p></div></div>
+      <p>Danışanın beyanı, bir paydaşın gözlemi ve sonraki seans birlikte değerlendirilir.</p></div></div>
     <section class="card"><div class="card-head"><h2>Planlar</h2></div>
       ${ev.commitments.length ? ev.commitments.map((k) => `<div class="plan-row">
         <div class="plan-main"><b>📌 ${planLine(k)}</b>
@@ -1609,7 +1614,7 @@ function tabEvidence(body, { c, ev }) {
             ${o.status === "yanitlandi" ? `<b class="score ${["low", "mid", "good", "good"][o.rating]}">${OBS_SCALE[o.rating]}</b>${o.example ? ` — “${esc(o.example)}”` : ""}` : `<span class="muted">yanıt bekleniyor</span>`}</span></div>`).join("")}
         </div>
         <button class="btn btn-secondary" data-observer="${k.id}">${icon("users")}Gözlemci ekle</button>
-      </div>`).join("") : empty("check", "Henüz plan yok", "Danışan eğitimdeki “Eğer–o zaman planım” bölümünde planını kurunca burada görünür.")}
+      </div>`).join("") : empty("check", "Henüz plan yok", "Danışan eğitimde planını kurunca burada görünür.")}
     </section>
     ${ev.session_reviews.length ? `<section class="card"><h2>Sonraki seanslarda kanıt</h2>${ev.session_reviews.map((r) => `
       <div class="obs-line">${r.bahsedildi ? "✅" : "➖"}<span><b>${esc(r.plan)}</b><br><span class="muted">${esc(r.kanit)}</span>
@@ -1626,7 +1631,7 @@ function tabEvidence(body, { c, ev }) {
 
 function observerForm(commitmentId, staffSide) {
   openModal("Gözlemci ekle", `
-    <p class="muted">Danışanın davranışı gerçek hayatta gördüğü bir kişi (yönetici, ekip arkadaşı, aile üyesi) kısa bir soruya cevap verir. Gözlemci yalnızca danışanın adını ve denediği davranışı görür.</p>
+    <p class="muted">Danışanı gerçek hayatta gören biri tek bir soruya cevap verir; yalnızca danışanın adını ve davranışı görür.</p>
     <div class="grid-form">
       ${field("Gözlemcinin adı *", `<input name="observer_name" required placeholder="Ör. Ayşe">`)}
       ${field("Yakınlık", `<input name="relation" placeholder="Ör. Ekip arkadaşı">`)}
@@ -1662,7 +1667,7 @@ function renderPlans(body, d) {
       <div class="row between"><span class="muted small">${obsBy(k.id).length ? obsBy(k.id).map((o) => `${esc(o.observer_name)}: ${o.status === "yanitlandi" ? "yanıtladı ✓" : "bekleniyor"}`).join(" · ") : "Bir gözlemci, gelişiminizi dışarıdan doğrulayabilir."}</span>
         <button class="btn btn-secondary" data-observer="${k.id}">${icon("users")}Gözlemci davet et</button></div>
     </section>`).join("")
-    : `<section class="card">${empty("check", "Henüz planınız yok", "Eğitimlerdeki “Eğer–o zaman planım” bölümünden ilk planınızı kurabilirsiniz.")}</section>`;
+    : `<section class="card">${empty("check", "Henüz planınız yok", "İlk planınızı bir eğitimin sonunda kurabilirsiniz.")}</section>`;
   $$(".plan-answer", body).forEach((f) => f.addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(f);
@@ -1728,6 +1733,7 @@ async function renderBots(box, clientId) {
 const PROGRESS_TABS = [["ozet", "Genel bakış"], ["yolculuk", "Gelişim yolculuğum"], ["egitimler", "Eğitimlerim"], ["planlar", "Planlarım"], ["mesajlar", "Mesajlar"]];
 
 async function viewMyProgress(tab) {
+  if (ME.self_guided) return viewSelfProgress(tab);  // koçsuz mod (self.js)
   const data = await api("/api/me/portal");
   setHeader([["Gelişimim"]]);
   renderProgress(data, tab, { base: "#/gelisim", checkinUrl: "/api/me/checkins" });
@@ -1743,26 +1749,30 @@ async function viewPortal(id) {
 function renderProgress(d, tab, opt) {
   const p = d.profile, b = d.behavior;
   const first = p.name.replace(/\(.*?\)/g, "").trim().split(" ")[0];
-  const open = d.tasks.filter((t) => t.status === "acik");
+  const week = opt.self ? selfWeek(opt.self) : 0;
+  const open = d.tasks.filter((t) => t.status === "acik" && (!opt.self || !t.detail || t.detail.hafta <= week));
+  const progressTabs = opt.self ? SELF_TABS : PROGRESS_TABS;
   const tabLink = (k) => opt.preview ? `${opt.base}${k}` : `${opt.base}/${k}`;
   page.innerHTML = `
     ${opt.preview ? `<div class="banner banner-info no-print">${icon("phone")}<div><b>Önizleme: danışanın gördüğü ekran</b>
-      <p>Danışan kendi hesabıyla girdiğinde yalnızca bu sayfayı görür. Koç değerlendirmesi (ICF) ve transkript danışana gösterilmez.</p></div></div>` : ""}
+      <p>Danışan yalnızca bu sayfayı görür; ICF ve transkript gizlidir.</p></div></div>` : ""}
     <div class="welcome-band">
-      <div><small>${esc(p.organization_name || "Bireysel koçluk")}${p.coach_name ? ` · Koçunuz: ${esc(p.coach_name)}` : ""}</small>
+      <div><small>${opt.self ? "Kendi kendine koçluk" : esc(p.organization_name || "Bireysel koçluk")}${p.coach_name ? ` · Koçunuz: ${esc(p.coach_name)}` : ""}</small>
         <h1>Merhaba ${esc(first)} 👋</h1>
         ${p.goals ? `<p>Hedefiniz: <b>${esc(p.goals)}</b></p>` : ""}</div>
       <form id="checkin" class="checkin-inline">
-        <span>Bugün nasılsınız?</span>
+        <span>${opt.self ? "Bugün nasılsın?" : "Bugün nasılsınız?"}</span>
         <div class="moods">${[1, 2, 3, 4, 5].map((m) => `<label><input type="radio" name="mood" value="${m}" required><span>${MOOD[m]}</span></label>`).join("")}</div>
         <div class="row"><input name="note" placeholder="Kısa bir not (isteğe bağlı)"><button class="btn btn-primary">Gönder</button></div>
       </form>
     </div>
-    <nav class="tabs">${PROGRESS_TABS.map(([k, l]) => `<a href="${tabLink(k)}" class="${k === tab ? "active" : ""}">${l}${k === "mesajlar" && d.messages.length ? `<span class="count">${d.messages.length}</span>` : ""}${k === "planlar" && d.commitments.some((x) => x.status === "aktif") ? `<span class="count">${d.commitments.filter((x) => x.status === "aktif").length}</span>` : ""}</a>`).join("")}</nav>
+    <nav class="tabs">${progressTabs.map(([k, l]) => `<a href="${tabLink(k)}" class="${k === tab ? "active" : ""}">${l}${k === "mesajlar" && d.messages.length ? `<span class="count">${d.messages.length}</span>` : ""}${k === "planlar" && d.commitments.some((x) => x.status === "aktif") ? `<span class="count">${d.commitments.filter((x) => x.status === "aktif").length}</span>` : ""}</a>`).join("")}</nav>
     <section id="tab-body"></section>`;
 
   const body = $("#tab-body");
-  if (tab === "yolculuk") {
+  if (tab === "planim" && opt.self) {
+    renderSelfPlan(body, opt.self);
+  } else if (tab === "yolculuk") {
     body.innerHTML = d.sessions.length ? `<div class="journey">${d.sessions.map((s, i) => `
       <div class="journey-item"><div class="journey-dot">${d.sessions.length - i}</div>
         <section class="card"><div class="card-head"><div><h2>${esc(s.title)}</h2><small>${fmtDate(s.created_at, false)}</small></div></div>
@@ -1786,12 +1796,12 @@ function renderProgress(d, tab, opt) {
     body.innerHTML = `
       <div class="kpis">
         ${kpi("Tamamlanan adımlar", `${b.gorev_tamamlanan}/${b.gorev_toplam}`, b.gorev_toplam ? `${open.length} adım devam ediyor` : "", "check")}
-        ${kpi("Seans", d.sessions.length, "tamamlandı", "mic")}
+        ${opt.self ? kpi("Plan haftası", `${Math.min(week, 4)}/4`, esc(opt.self.plan?.baslik || ""), "clock") : kpi("Seans", d.sessions.length, "tamamlandı", "mic")}
         ${kpi("Ruh hali ortalaması", b.ruh_hali_ortalama ?? "—", `${b.checkin_sayisi} check-in`, "message", scoreClass(b.ruh_hali_ortalama))}
         ${kpi("Eğitim", d.trainings.length, "size özel", "book")}
       </div>
       <div class="grid-2">
-        <section class="card"><div class="card-head"><h2>Bu haftaki adımlarım</h2></div>${taskList(open)}</section>
+        <section class="card"><div class="card-head"><h2>Bu haftaki adımlarım</h2>${opt.self ? `<a class="link" href="#/gelisim/planim">Planım</a>` : ""}</div>${taskList(open)}</section>
         <section class="card"><div class="card-head"><h2>Ruh hali seyrim</h2></div>${moodChart(b.ruh_hali_serisi)}</section>
       </div>
       ${d.messages[0] ? `<section class="card"><div class="card-head"><h2>Son mesaj</h2><a class="link" href="${tabLink("mesajlar")}">Tümü</a></div>
@@ -1804,7 +1814,7 @@ function renderProgress(d, tab, opt) {
     const f = new FormData(e.target);
     await sendJSON(opt.checkinUrl, { mood: Number(f.get("mood")), note: f.get("note") });
     e.target.reset();
-    toast("Teşekkürler! Koçunuz bunu görecek.");
+    toast(opt.self ? "Teşekkürler, kaydettim 💜" : "Teşekkürler! Koçunuz bunu görecek.");
     route();
   });
 }
@@ -1949,7 +1959,7 @@ async function viewOrganizations() {
       <div class="tile-art org-${o.org_type}">${icon("building")}</div>
       <div class="tile-body"><b>${esc(o.name)}</b><small>${ORG_TYPE[o.org_type] || o.org_type}${o.sector ? ` · ${esc(o.sector)}` : ""}</small></div>
       <div class="tile-foot"><span class="muted small">${o.client_count} danışan</span>${o.knowledge ? `<span class="tag">${icon("database")}Kurumsal hafıza</span>` : ""}</div>
-    </a>`).join("")}</div>` : `<section class="card">${empty("building", "Henüz kurum yok", "Kurum veya sosyal birim ekleyerek danışanları gruplayın ve kurumsal içgörü alın.")}</section>`}`;
+    </a>`).join("")}</div>` : `<section class="card">${empty("building", "Henüz kurum yok", "Danışanları gruplamak için kurum ekleyin.")}</section>`}`;
 }
 
 async function viewOrganization(id) {
@@ -2091,6 +2101,8 @@ async function showAuth() {
       ${st.demo_roles.length ? `<div class="divider"><span>veya örnek hesapla inceleyin</span></div>
         <div class="demo-btns">${["koc", "danisan", "kurum"].filter((r) => st.demo_roles.includes(r)).map((r) => `
           <button class="demo-btn" data-role="${r}">${icon(DEMO_BTNS[r][0])}<div><b>${DEMO_BTNS[r][1]}</b><small>${DEMO_BTNS[r][2]}</small></div></button>`).join("")}</div>` : ""}
+      ${setup ? "" : `<div class="divider"><span>koçun yok mu?</span></div>
+        <button class="demo-btn self-cta" id="go-register">${icon("sparkles")}<div><b>Kendi başıma kullanmak istiyorum</b><small>Kendini tanıt, sana özel planını al · 18 yaş ve üstü</small></div></button>`}
     </div></div>`;
   renderThemeButtons();
   $("#auth-form").addEventListener("submit", async (e) => {
@@ -2101,7 +2113,8 @@ async function showAuth() {
       startApp();
     } catch (err) { $("#auth-error").textContent = err.message; }
   });
-  $$(".demo-btn", auth).forEach((b) => b.addEventListener("click", async () => {
+  $("#go-register")?.addEventListener("click", () => showRegister());
+  $$(".demo-btn[data-role]", auth).forEach((b) => b.addEventListener("click", async () => {
     await sendJSON("/api/auth/demo-login", { role: b.dataset.role });
     location.hash = "";
     startApp();
@@ -2135,4 +2148,5 @@ window.addEventListener("beforeprint", () => $$("details").forEach((d) => (d.ope
 // Cihazın teması değişirse (ve kullanıcı seçim yapmadıysa) düğme simgesi de güncellensin
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderThemeButtons);
 renderThemeButtons();
-startApp();
+// self.js (koçsuz mod) da yüklendikten sonra başla
+window.addEventListener("DOMContentLoaded", startApp);

@@ -15,7 +15,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agent, agents, analysis, auth, db, demo, insights, meetingbot, notify, training, video, vision
+from . import (agent, agents, analysis, auth, db, demo, insights, meetingbot, notify, safety, selfcoach, training,
+               video, vision)
 from .config import (AGENT_INTERVAL_MIN, COMMITMENT_CHECK_DAYS, LLM_PROVIDER, PUBLIC_BASE_URL, RESEARCH_MODE,
                      TRANSCRIBE_MODE, UPLOAD_DIR)
 from .llm import LLMError
@@ -132,11 +133,19 @@ def _check_email(email: str) -> str:
     return email
 
 
+def _self_guided(user: dict | None) -> bool:
+    if not user or user["role"] != "danisan" or not user.get("client_id"):
+        return False
+    c = db.get_client(user["client_id"])
+    return bool(c and c.get("self_guided"))
+
+
 @app.get("/api/auth/state")
 def auth_state(request: Request):
     user = auth.user_from_token(request.cookies.get(auth.COOKIE))
     return {
-        "user": user and {**user, "role_label": auth.ROLE_LABELS[user["role"]]},
+        "user": user and {**user, "role_label": "Bireysel kullanıcı" if _self_guided(user) else auth.ROLE_LABELS[user["role"]],
+                          "self_guided": _self_guided(user)},
         "setup_needed": auth.user_count() == 0,
         "demo_roles": demo.demo_roles(),
     }
@@ -165,6 +174,38 @@ def auth_login(body: LoginIn, response: Response):
         raise HTTPException(400, "E-posta veya şifre hatalı.")
     _login(response, row["id"])
     return auth.get_user(row["id"])
+
+
+class RegisterIn(BaseModel):
+    name: str
+    email: str
+    password: str
+    age: int
+    kvkk: bool = False
+    not_therapy: bool = False
+
+
+@app.post("/api/auth/register")
+def auth_register(body: RegisterIn, response: Response):
+    """Koçsuz mod: kullanıcı kendisi kayıt olur (18 yaş ve üstü)."""
+    if auth.user_count() == 0:
+        raise HTTPException(400, "Önce yönetici kurulumu yapılmalı.")
+    name = body.name.strip()[:80]
+    if not name:
+        raise HTTPException(400, "Adını ya da bir takma ad yaz.")
+    if body.age < 18:
+        raise HTTPException(400, "Farkora'yı kendi başına kullanmak için 18 yaşında ya da daha büyük olmalısın.")
+    if body.age > 110:
+        raise HTTPException(400, "Yaşını kontrol eder misin?")
+    if not (body.kvkk and body.not_therapy):
+        raise HTTPException(400, "Devam etmek için iki onay kutusunu da işaretle.")
+    _check_password(body.password)
+    email = _check_email(body.email)
+    client = db.create_client(name, "", email=email, consent=True, self_guided=1, age=body.age)
+    user = auth.create_user(email, name, "danisan", body.password, client_id=client["id"])
+    selfcoach.get_or_create(client["id"])
+    _login(response, user["id"])
+    return user
 
 
 @app.post("/api/auth/demo-login")
@@ -412,7 +453,8 @@ def update_client(client_id: int, body: ClientIn, user: dict = Depends(staff)):
 @app.get("/api/clients/{client_id}")
 def client_detail(client_id: int, user: dict = Depends(staff)):
     client = managed_client(client_id, user)
-    return {**client, "sessions": db.list_sessions(client_id), "account": auth.user_for_client(client_id)}
+    return {**client, "sessions": db.list_sessions(client_id), "account": auth.user_for_client(client_id),
+            "self": selfcoach.coach_view(client_id) if client.get("self_guided") else None}
 
 
 # --- Danışanın portal hesabı ---
@@ -799,6 +841,10 @@ def _checkin(client_id: int, body: CheckinIn, background: BackgroundTasks) -> di
     if not 1 <= body.mood <= 5:
         raise HTTPException(400, "Ruh hali 1 ile 5 arasında olmalı.")
     checkin = db.create_checkin(client_id, body.mood, body.note.strip())
+    client = db.get_client(client_id)
+    if client.get("self_guided") and safety.is_crisis(body.note):
+        p = selfcoach.get_or_create(client_id)
+        selfcoach._enter_crisis(client_id, p["phase"] if p["phase"] != "kriz" else "aktif")
     background.add_task(agent.run_safely, client_id)  # ruh hali düştüyse ajan koçu uyarır
     return checkin
 
@@ -839,6 +885,141 @@ def my_portal(user: dict = Depends(roles("danisan"))):
 @app.post("/api/me/checkins")
 def my_checkin(body: CheckinIn, background: BackgroundTasks, user: dict = Depends(roles("danisan"))):
     return _checkin(user["client_id"], body, background)
+
+
+# ===================================================================
+# Koçsuz mod (kendi kendine koçluk)
+# ===================================================================
+
+
+def self_user(user: dict = Depends(roles("danisan"))) -> dict:
+    if not _self_guided(user):
+        raise HTTPException(403, "Bu bölüm kendi başına kullanan hesaplar içindir.")
+    return user
+
+
+class IntakeIn(BaseModel):
+    meslek: str = ""
+    yer: Literal["", "buyuksehir", "sehir", "ilce", "koy"] = ""
+    yasam: Literal["", "yalniz", "aile", "partner", "arkadas", "yurt"] = ""
+    hobiler: list[str] = []
+    ortamlar: list[str] = []
+    sevdikleri: str = ""
+    renkler: str = ""
+    zaman: Literal["", "az", "orta", "cok"] = ""
+    butce: Literal["", "yok", "az", "rahat"] = ""
+    kisit: str = ""
+    konu: str = "diger"
+    sorun: str
+
+
+class SelfStartIn(BaseModel):
+    intake: IntakeIn
+    tipi: list[int]
+
+
+class SelfTextIn(BaseModel):
+    text: str = ""
+
+
+_LABELS = {
+    "yer": {"buyuksehir": "büyükşehir", "sehir": "şehir", "ilce": "ilçe / kasaba", "koy": "köy"},
+    "yasam": {"yalniz": "yalnız", "aile": "ailesiyle", "partner": "eşi / partneriyle", "arkadas": "ev arkadaşıyla", "yurt": "yurtta"},
+    "zaman": {"az": "haftada 1-2 saat", "orta": "haftada 3-5 saat", "cok": "haftada 5 saatten fazla"},
+    "butce": {"yok": "ücretsiz etkinlikler", "az": "az bir bütçe", "rahat": "bütçe sorun değil"},
+}
+
+
+@app.get("/api/me/self")
+def self_state(user: dict = Depends(self_user)):
+    return selfcoach.state(user["client_id"])
+
+
+@app.post("/api/me/self/start")
+def self_start(body: SelfStartIn, user: dict = Depends(self_user)):
+    intake = body.intake.model_dump()
+    intake["sorun"] = intake["sorun"].strip()[:3000]
+    if len(intake["sorun"]) < 10:
+        raise HTTPException(400, "Konunu biraz daha anlatır mısın? (en az birkaç kelime)")
+    if intake["konu"] not in selfcoach.TOPICS:
+        intake["konu"] = "diger"
+    intake["hobiler"] = [h.strip()[:40] for h in intake["hobiler"] if h.strip()][:15]
+    intake["ortamlar"] = [h.strip()[:40] for h in intake["ortamlar"] if h.strip()][:10]
+    for k in ("meslek", "sevdikleri", "renkler", "kisit"):
+        intake[k] = intake[k].strip()[:300]
+    for k, labels in _LABELS.items():  # yapay zekâ için okunur değer
+        intake[k] = labels.get(intake[k], intake[k])
+    try:
+        return selfcoach.start(user["client_id"], intake, body.tipi)
+    except (ValueError, LLMError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/me/self/chat")
+def self_chat(body: SelfTextIn, user: dict = Depends(self_user)):
+    try:
+        return selfcoach.chat(user["client_id"], body.text)
+    except (ValueError, LLMError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/me/self/correct")
+def self_correct(body: SelfTextIn, user: dict = Depends(self_user)):
+    if len(body.text.strip()) < 3:
+        raise HTTPException(400, "Neyi düzeltmek istediğini yaz.")
+    try:
+        selfcoach.build_profile(user["client_id"], correction=body.text.strip()[:1000])
+    except LLMError as e:
+        raise HTTPException(400, str(e)) from e
+    return selfcoach.state(user["client_id"])
+
+
+@app.post("/api/me/self/confirm")
+def self_confirm(background: BackgroundTasks, user: dict = Depends(self_user)):
+    try:
+        selfcoach.confirm_profile(user["client_id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    background.add_task(selfcoach.generate_plan, user["client_id"])
+    return selfcoach.state(user["client_id"])
+
+
+@app.post("/api/me/self/resume")
+def self_resume(user: dict = Depends(self_user)):
+    try:
+        selfcoach.resume_after_crisis(user["client_id"])
+    except LLMError as e:
+        raise HTTPException(400, str(e)) from e
+    return selfcoach.state(user["client_id"])
+
+
+@app.post("/api/me/self/restart")
+def self_restart(user: dict = Depends(self_user)):
+    """Kendini tanıtma adımlarını baştan yapmak (plan başlamadan önce)."""
+    p = selfcoach.get_or_create(user["client_id"])
+    if p["phase"] in ("aktif", "plan_hazirlaniyor"):
+        raise HTTPException(400, "Planın başladı; baştan başlamak yerine asistanınla konuşabilirsin.")
+    db.update_self_profile(user["client_id"], phase="form", questions_asked=0, profile=None)
+    return selfcoach.state(user["client_id"])
+
+
+@app.post("/api/me/self/tasks/{task_id}/swap")
+def self_swap_task(task_id: int, body: SelfTextIn, user: dict = Depends(self_user)):
+    try:
+        return selfcoach.swap_task(user["client_id"], task_id, body.text)
+    except (ValueError, LLMError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/me/self/coach")
+def self_coach_request(user: dict = Depends(self_user)):
+    selfcoach.request_coach(user["client_id"])
+    return selfcoach.state(user["client_id"])
+
+
+@app.get("/api/self-guided/requests")
+def self_guided_requests(_: dict = Depends(admin_only)):
+    return db.self_guided_requests()
 
 
 # ===================================================================
