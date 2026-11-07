@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="fk-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#DB2777"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#fk-bg)"/>
+  <!-- Konuşma balonu (koçluk görüşmesi) + F + kıvılcım (görüşmeden doğan farkındalık) -->
+  <path d="M20 15H44C48.4 15 51 17.6 51 22V37C51 41.4 48.4 44 44 44H33L24 51V44H20C15.6 44 13 41.4 13 37V22C13 17.6 15.6 15 20 15Z" fill="#FFFFFF"/>
+  <path d="M26 37V22.5H35M26 30H32" stroke="url(#fk-bg)" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M41 20.5C41.5 24.3 42.5 25.3 46.3 25.8C42.5 26.3 41.5 27.3 41 31.1C40.5 27.3 39.5 26.3 35.7 25.8C39.5 25.3 40.5 24.3 41 20.5Z" fill="#F59E0B"/>
+</svg>

@@ -1,0 +1,13 @@
+anthropic>=2.4
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic>=2
+python-dotenv
+faster-whisper
+pytest
+httpx
+google-genai
+requests
+# PostgreSQL kullanılacaksa (DATABASE_URL):
+psycopg[binary]>=3.2

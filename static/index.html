@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Farkora</title>
+  <script>
+    // Tema: kullanıcının seçimi (yoksa cihazın teması). Sayfa çizilmeden önce uygulanır.
+    try { const t = localStorage.getItem("farkora-tema"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand-row">
+      <a class="brand" href="#/" id="brand-link" title="Ana sayfa">
+        <img class="brand-mark" src="/static/logo.svg" alt="Farkora logosu">
+        <div class="brand-text"><b>Farkora</b><small>Yapay zekâ destekli koçluk</small></div>
+      </a>
+      <button class="collapse-btn" id="collapse-btn" type="button" aria-label="Menüyü daralt" title="Menüyü daralt"></button>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot">
+      <div class="mode" id="mode"></div>
+      <div id="user-box"></div>
+    </div>
+  </aside>
+
+  <section class="auth" id="auth" hidden></section>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-only menu-btn" id="menu-btn" aria-label="Menü"></button>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="topbar-actions" id="topbar-actions"></div>
+      <button class="theme-btn" id="theme-btn" aria-label="Açık / koyu tema"></button>
+    </header>
+    <main class="page" id="page"></main>
+  </div>
+
+  <dialog id="modal"><div id="modal-body"></div></dialog>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
