@@ -124,3 +124,9 @@ tests/           Uçtan uca testler
 
 > ICF puanlaması gelişim amaçlı bir ön değerlendirmedir, resmî akreditasyon puanı değildir.
 > Ücretsiz yapay zekâ anahtarlarıyla yalnızca kurgusal veri kullanın. Gerçek danışan verisi için açık rıza (KVKK) ve veri işleme sözleşmeli bir hizmet gerekir.
+
+## Lisans ve kullanım
+
+© 2026 Şevket Can Yorulmaz. **Tüm hakları saklıdır.**
+
+Bu depo, kodun incelenebilmesi için herkese açıktır; açık kaynak lisansı **değildir**. Kod yalnızca okunabilir ve akademik değerlendirme amacıyla incelenebilir. Yazılı izin olmadan kopyalanamaz, değiştirilemez, dağıtılamaz, yayımlanamaz ve ticari ya da başka bir amaçla kullanılamaz. Ayrıntılar için [LICENSE](LICENSE) dosyasına bakın. İzin için proje sahibiyle iletişime geçin.
