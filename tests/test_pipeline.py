@@ -594,3 +594,40 @@ def test_admin_role_change_and_client_delete():
     kept = koc.post("/api/clients", json={"name": "Kalan Danışan", "consent": True}).json()
     assert client.patch(f"/api/users/{k['id']}", json={"role": "kurum", "organization_id": org["id"]}).status_code == 200
     assert client.get(f"/api/clients/{kept['id']}").json()["coach_id"] is None
+
+
+def test_forgot_password_code(monkeypatch):
+    from app import auth
+
+    client.post("/api/users", json={"name": "Unutkan Koç", "email": "unutkan@test.local", "role": "koc",
+                                    "password": "eski-sifre-12"})
+    anon = TestClient(app)
+    codes = iter(["123456", "654321"])
+    monkeypatch.setattr(auth, "new_reset_code", lambda: next(codes))
+
+    r = anon.post("/api/auth/forgot", json={"email": "unutkan@test.local"}).json()
+    assert r["ok"] and r["eposta_ayarli"] is False  # testte SMTP yok: kod sunucu penceresine yazılır
+    # Olmayan hesap da aynı cevabı alır (hesap var mı yok mu belli olmaz)
+    assert anon.post("/api/auth/forgot", json={"email": "yok@test.local"}).json()["ok"] is True
+    # Hemen tekrar istenirse yeni kod üretilmez
+    anon.post("/api/auth/forgot", json={"email": "unutkan@test.local"})
+
+    bad = anon.post("/api/auth/reset", json={"email": "unutkan@test.local", "code": "000000", "password": "yeni-sifre-12"})
+    assert bad.status_code == 400
+    ok = anon.post("/api/auth/reset", json={"email": "unutkan@test.local", "code": "123456", "password": "yeni-sifre-12"})
+    assert ok.status_code == 200 and anon.get("/api/auth/state").json()["user"]["email"] == "unutkan@test.local"
+    # Kod tek kullanımlık; eski şifre artık çalışmaz, yenisi çalışır
+    assert anon.post("/api/auth/reset", json={"email": "unutkan@test.local", "code": "123456",
+                                              "password": "baska-sifre-1"}).status_code == 400
+    assert TestClient(app).post("/api/auth/login", json={"email": "unutkan@test.local", "password": "eski-sifre-12"}).status_code == 400
+    _login("unutkan@test.local", "yeni-sifre-12")
+
+    # 5 yanlış denemeden sonra doğru kod da kabul edilmez
+    rows = auth.db.all_rows("SELECT id FROM users WHERE email = 'unutkan@test.local'")
+    with auth.db.connect() as conn:
+        conn.execute("UPDATE password_resets SET created_at = '2000-01-01T00:00:00' WHERE user_id = ?", (rows[0]["id"],))
+    anon.post("/api/auth/forgot", json={"email": "unutkan@test.local"})  # yeni kod: 654321
+    for _ in range(5):
+        anon.post("/api/auth/reset", json={"email": "unutkan@test.local", "code": "111111", "password": "x-sifre-123"})
+    assert anon.post("/api/auth/reset", json={"email": "unutkan@test.local", "code": "654321",
+                                              "password": "x-sifre-123"}).status_code == 400

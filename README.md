@@ -50,6 +50,8 @@ Ajanlar zincir gibi çalışır: analiz ajanının bulduğu gelişim alanı müf
 - **Güvenlik:** kendine zarar / intihar ifadesi (kural tabanlı + yapay zekâ) görülürse plan durur, sabit destek mesajı ve 112 gösterilir; ağır belirtilerde uzman önerilir; tanı ve ilaç konuşulmaz
 - İstenirse “Bir koçla eşleş” ile yöneticiye istek gider; koç atanınca profil ve plan koçun ekranında görünür
 
+**Şifremi unuttum:** Giriş ekranından e-postaya 6 haneli kod gider (15 dakika geçerli, tek kullanımlık, 5 yanlış denemede iptal). E-posta (SMTP) henüz ayarlı değilse kod, uygulamanın çalıştığı bilgisayardaki sunucu penceresine yazılır. Komut satırından sıfırlama için: `.venv\Scripts\python hesap.py`.
+
 **Roller:** yönetici, koç (yalnızca kendi danışanları), danışan (kendi gelişimi; ICF ve transkript görünmez), kurum yöneticisi (anonim panel). KVKK açık rızası olmadan kayıt yüklenemez.
 
 **Arayüz:** açık/koyu tema, telefona uyumlu, daraltılabilir menü.
@@ -94,7 +96,7 @@ Tüm ayarlar ve açıklamaları `.env.example` dosyasında. **`.env` dosyası as
 .venv\Scripts\python -m pytest -q
 ```
 
-27 uçtan uca test (SQLite). Koçsuz moddan önceki 23 test PostgreSQL üzerinde de denendi.
+29 uçtan uca test (SQLite). Koçsuz moddan önceki 23 test PostgreSQL üzerinde de denendi.
 
 ## Klasör yapısı
 

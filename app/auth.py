@@ -37,6 +37,15 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     user_id INTEGER NOT NULL REFERENCES users(id),
     expires_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS password_resets (      -- "şifremi unuttum": e-postaya giden 6 haneli kod
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    code_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -146,6 +155,54 @@ def end_session(token: str | None) -> None:
     if token:
         with db.connect() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE token_hash = ?", (_token_hash(token),))
+
+
+# --- Şifremi unuttum -------------------------------------------------------------
+
+RESET_MINUTES = 15       # kodun geçerlilik süresi
+RESET_MAX_ATTEMPTS = 5   # yanlış kod denemesi sınırı
+RESET_COOLDOWN_SEC = 60  # aynı hesaba arka arkaya kod gönderme aralığı
+
+
+def _code_hash(user_id: int, code: str) -> str:
+    return hashlib.sha256(f"{user_id}:{code.strip()}".encode()).hexdigest()
+
+
+def new_reset_code() -> str:
+    return f"{secrets.randbelow(10**6):06d}"
+
+
+def create_reset_code(user_id: int) -> str | None:
+    """Yeni kod üretir (öncekiler geçersiz olur). Çok sık istenirse None döner."""
+    now = datetime.now()
+    recent = db.all_rows("SELECT created_at FROM password_resets WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,))
+    if recent and (now - datetime.fromisoformat(recent[0]["created_at"])).total_seconds() < RESET_COOLDOWN_SEC:
+        return None
+    code = new_reset_code()
+    with db.connect() as conn:
+        conn.execute("UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0", (user_id,))
+        conn.execute(
+            "INSERT INTO password_resets (user_id, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, _code_hash(user_id, code), (now + timedelta(minutes=RESET_MINUTES)).isoformat(timespec="seconds"),
+             now.isoformat(timespec="seconds")),
+        )
+    return code
+
+
+def use_reset_code(user_id: int, code: str) -> bool:
+    """Kod doğru, süresi geçmemiş ve deneme hakkı varsa True; kod tek kullanımlıktır."""
+    rows = db.all_rows(
+        "SELECT * FROM password_resets WHERE user_id = ? AND used = 0 ORDER BY id DESC LIMIT 1", (user_id,))
+    if not rows:
+        return False
+    r = rows[0]
+    if r["expires_at"] < datetime.now().isoformat(timespec="seconds") or r["attempts"] >= RESET_MAX_ATTEMPTS:
+        return False
+    if not hmac.compare_digest(r["code_hash"], _code_hash(user_id, code)):
+        db._update("password_resets", r["id"], {"attempts": r["attempts"] + 1})
+        return False
+    db._update("password_resets", r["id"], {"used": 1})
+    return True
 
 
 # --- Erişim kuralları --------------------------------------------------------------

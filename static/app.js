@@ -2127,6 +2127,7 @@ async function showAuth() {
         ${setup ? field("Ad soyad", `<input name="name" required autocomplete="name">`) : ""}
         ${field("E-posta", `<input name="email" type="email" required autocomplete="email">`)}
         ${field("Şifre", `<input name="password" type="password" required ${setup ? 'minlength="8" autocomplete="new-password"' : 'autocomplete="current-password"'}>`, setup ? "En az 8 karakter" : "")}
+        ${setup ? "" : `<button type="button" class="link-btn forgot-link" id="forgot">Şifremi unuttum</button>`}
         <p class="form-error" id="auth-error"></p>
         <button class="btn btn-primary full">${setup ? "Hesabı oluştur ve başla" : "Giriş yap"}</button>
       </form>
@@ -2152,11 +2153,66 @@ async function showAuth() {
     } catch (err) { $("#auth-error").textContent = err.message; }
   });
   $("#go-register")?.addEventListener("click", () => showRegister());
+  $("#forgot")?.addEventListener("click", () => showForgot($("#auth-form [name=email]").value));
   $$("[data-role]", auth).forEach((b) => b.addEventListener("click", async () => {
     await sendJSON("/api/auth/demo-login", { role: b.dataset.role });
     location.hash = "";
     startApp();
   }));
+}
+
+// Şifremi unuttum: e-postaya 6 haneli kod -> kod + yeni şifre
+function showForgot(email = "") {
+  const box = $(".auth-box");
+  box.innerHTML = `
+    <button class="link-btn" id="back-login">← Girişe dön</button>
+    <h2>Şifremi unuttum</h2>
+    <p class="muted">E-postanı yaz, sana 6 haneli bir kod gönderelim.</p>
+    <form id="forgot-form">
+      ${field("E-posta", `<input name="email" type="email" required autocomplete="email" value="${esc(email)}">`)}
+      <p class="form-error" id="forgot-error"></p>
+      <button class="btn btn-primary full">Kod gönder</button>
+    </form>`;
+  $("#back-login").addEventListener("click", showAuth);
+  $("#forgot-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("button.btn-primary", e.target);
+    btn.disabled = true;
+    try {
+      const mail = new FormData(e.target).get("email");
+      const r = await sendJSON("/api/auth/forgot", { email: mail });
+      showResetCode(mail, r);
+    } catch (err) { $("#forgot-error").textContent = err.message; btn.disabled = false; }
+  });
+}
+
+function showResetCode(email, info) {
+  const box = $(".auth-box");
+  box.innerHTML = `
+    <button class="link-btn" id="back-forgot">← Geri</button>
+    <h2>Kodu gir</h2>
+    <p class="muted">Bu e-postayla kayıtlı bir hesap varsa <b>${esc(email)}</b> adresine kod gönderildi. Kod ${info.dakika} dakika geçerli.</p>
+    ${info.eposta_ayarli ? "" : `<div class="banner banner-info">${icon("alert")}<p>E-posta gönderimi henüz ayarlı değil. Kod, uygulamanın çalıştığı bilgisayardaki siyah pencereye yazıldı; oradan ya da yöneticiden alabilirsin.</p></div>`}
+    <form id="reset-form">
+      ${field("6 haneli kod", `<input name="code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">`)}
+      ${field("Yeni şifre", `<input name="password" type="password" required minlength="8" autocomplete="new-password">`, "En az 8 karakter")}
+      ${field("Yeni şifre (tekrar)", `<input name="password2" type="password" required minlength="8" autocomplete="new-password">`)}
+      <p class="form-error" id="reset-error"></p>
+      <button class="btn btn-primary full">Şifreyi değiştir ve giriş yap</button>
+    </form>`;
+  $("#back-forgot").addEventListener("click", () => showForgot(email));
+  $("#reset-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    $("#reset-error").textContent = "";
+    if (f.get("password") !== f.get("password2")) { $("#reset-error").textContent = "Şifreler aynı değil."; return; }
+    try {
+      await sendJSON("/api/auth/reset", { email, code: f.get("code"), password: f.get("password") });
+      location.hash = "";
+      toast("Şifren değiştirildi");
+      startApp();
+    } catch (err) { $("#reset-error").textContent = err.message; }
+  });
 }
 
 async function startApp() {

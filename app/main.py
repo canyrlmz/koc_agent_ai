@@ -218,6 +218,46 @@ def auth_demo_login(body: DemoLoginIn, response: Response):
     return user
 
 
+class ForgotIn(BaseModel):
+    email: str
+
+
+class ResetIn(BaseModel):
+    email: str
+    code: str
+    password: str
+
+
+@app.post("/api/auth/forgot")
+def auth_forgot(body: ForgotIn):
+    """Şifremi unuttum: hesabın e-postasına 6 haneli kod gönderir.
+    Hesabın var olup olmadığı dışarıya söylenmez. E-posta (SMTP) ayarlı değilse kod, uygulamanın
+    çalıştığı bilgisayardaki sunucu penceresine yazılır (yalnızca o bilgisayara erişen görebilir)."""
+    row = auth.find_by_email(body.email)
+    if row and not row["is_demo"]:
+        code = auth.create_reset_code(row["id"])
+        if code:
+            status, _ = notify.send_email(
+                row["email"], "Farkora şifre sıfırlama kodu",
+                f"Merhaba {row['name']},\n\nŞifre sıfırlama kodunuz: {code}\n\n"
+                f"Kod {auth.RESET_MINUTES} dakika geçerlidir. Bu isteği siz yapmadıysanız bu e-postayı yok sayın.")
+            if status != "gonderildi":
+                print(f"\n[Farkora] E-posta gönderilemedi ({status}). Şifre sıfırlama kodu: {row['email']} -> {code}\n",
+                      flush=True)
+    return {"ok": True, "eposta_ayarli": notify.status()["eposta"], "dakika": auth.RESET_MINUTES}
+
+
+@app.post("/api/auth/reset")
+def auth_reset(body: ResetIn, response: Response):
+    _check_password(body.password)
+    row = auth.find_by_email(body.email)
+    if not row or row["is_demo"] or not auth.use_reset_code(row["id"], body.code):
+        raise HTTPException(400, "Kod hatalı ya da süresi dolmuş. Yeni kod isteyebilirsiniz.")
+    auth.set_password(row["id"], body.password)
+    _login(response, row["id"])
+    return auth.get_user(row["id"])
+
+
 @app.post("/api/auth/logout")
 def auth_logout(request: Request, response: Response):
     auth.end_session(request.cookies.get(auth.COOKIE))
