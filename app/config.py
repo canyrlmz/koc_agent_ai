@@ -47,7 +47,16 @@ TASK_DUE_DAYS = int(os.getenv("TASK_DUE_DAYS", "7"))
 COMMITMENT_CHECK_DAYS = int(os.getenv("COMMITMENT_CHECK_DAYS", "3"))
 
 # Bağlantılarda kullanılacak adres (gözlemci linki, e-postadaki "uygulamayı aç" linki)
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8765").rstrip("/")
+# Render gibi sağlayıcılar kendi adresini RENDER_EXTERNAL_URL ile verir
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL")
+                   or "http://127.0.0.1:8765").rstrip("/")
+
+# --- Sunucu kurulumu (isteğe bağlı) ---
+# Hiç hesap yokken ilk yönetici bu bilgilerle oluşturulur (sunucuda ilk ziyaretçinin yönetici olmasını önler)
+INITIAL_ADMIN_EMAIL = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
+INITIAL_ADMIN_PASSWORD = os.getenv("INITIAL_ADMIN_PASSWORD", "")
+# İlk açılışta, veritabanında hiç danışan yoksa kurgusal örnek veriyi yükle
+SEED_DEMO = os.getenv("SEED_DEMO", "false").lower() == "true"
 
 # --- Bildirim kanalları (boş bırakılırsa mesaj gönderilmez, giden kutusuna "simüle" yazılır) ---
 SMTP_HOST = os.getenv("SMTP_HOST", "")

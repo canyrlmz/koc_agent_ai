@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+data
+tests
+.pytest_cache
+__pycache__
+*.pyc
+*.log
+*.bat
+*.ps1
+.claude

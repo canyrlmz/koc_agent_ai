@@ -17,8 +17,8 @@ from pydantic import BaseModel
 
 from . import (agent, agents, analysis, auth, db, demo, insights, meetingbot, notify, safety, selfcoach, training,
                video, vision)
-from .config import (AGENT_INTERVAL_MIN, COMMITMENT_CHECK_DAYS, LLM_PROVIDER, PUBLIC_BASE_URL, RESEARCH_MODE,
-                     TRANSCRIBE_MODE, UPLOAD_DIR)
+from .config import (AGENT_INTERVAL_MIN, COMMITMENT_CHECK_DAYS, INITIAL_ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD,
+                     LLM_PROVIDER, PUBLIC_BASE_URL, RESEARCH_MODE, SEED_DEMO, TRANSCRIBE_MODE, UPLOAD_DIR)
 from .llm import LLMError
 from .sources import UploadSource
 
@@ -37,6 +37,19 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Farkora", lifespan=lifespan)
 db.init_db()
+
+
+def _bootstrap() -> None:
+    """Sunucu kurulumu: ilk yönetici ve örnek veri (yalnızca ilgili ayarlar verilmişse ve bir kez)."""
+    if INITIAL_ADMIN_EMAIL and len(INITIAL_ADMIN_PASSWORD) >= 8 and auth.user_count() == 0:
+        auth.create_user(INITIAL_ADMIN_EMAIL, "Yönetici", "admin", INITIAL_ADMIN_PASSWORD)
+        print(f"[Farkora] İlk yönetici hesabı oluşturuldu: {INITIAL_ADMIN_EMAIL}", flush=True)
+    if SEED_DEMO and not db.all_rows("SELECT id FROM clients LIMIT 1"):
+        demo.seed()
+        print("[Farkora] Örnek veri yüklendi.", flush=True)
+
+
+_bootstrap()
 demo.ensure_demo_accounts()
 upload_source = UploadSource()
 
@@ -96,6 +109,7 @@ def portal_client(client_id: int, user: dict) -> dict:
 
 def _login(response: Response, user_id: int) -> None:
     response.set_cookie(auth.COOKIE, auth.create_session(user_id), httponly=True, samesite="lax",
+                        secure=PUBLIC_BASE_URL.startswith("https://"),
                         max_age=auth.SESSION_DAYS * 86400)
 
 

@@ -1,0 +1,37 @@
+# Render Blueprint: Farkora'yı tek tıkla sunucuya kurar (Render > New > Blueprint > bu depo).
+# Her GitHub güncellemesinde (main dalı) otomatik yeniden kurulur.
+services:
+  - type: web
+    name: farkora
+    runtime: docker
+    plan: free            # ücretsiz: 15 dk kullanılmazsa uyur, ilk açılış ~1 dk sürer
+    region: frankfurt
+    autoDeploy: true
+    healthCheckPath: /api/auth/state
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: farkora-db
+          property: connectionString
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY      # Render panelinde sizden istenir; depoya yazılmaz
+        sync: false
+      - key: INITIAL_ADMIN_EMAIL # ilk yönetici hesabı (yalnızca hiç hesap yokken oluşturulur)
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_DEMO           # ilk açılışta kurgusal örnek veriyi yükle
+        value: "true"
+      - key: TRANSCRIBE_MODE     # ücretsiz pakette bellek (512 MB) Whisper için yetmez
+        value: mock
+      - key: RESEARCH_MODE
+        value: openalex
+      - key: AGENT_INTERVAL_MIN
+        value: "30"
+
+databases:
+  - name: farkora-db
+    plan: free
+    region: frankfurt
+    databaseName: farkora

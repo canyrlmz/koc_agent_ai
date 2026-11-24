@@ -77,6 +77,19 @@ Tarayıcıda **http://localhost:8765** adresini açın.
 
 **İnternete açmak (geçici link):** `Farkora_Yayinla.bat` uygulamayı başlatır ve Cloudflare geçici tüneliyle herkese açık bir link verir (link panoya kopyalanır). `cloudflared` kurulu olmalıdır (`winget install Cloudflare.cloudflared`). Link her açılışta değişir ve yalnızca pencere ve bilgisayar açıkken çalışır. FFmpeg kurulu olmalıdır. İlk açılışta yönetici hesabı oluşturulur; “Örnek veriyle göster” kurgusal verileri yükler.
 
+## Sunucuya kurulum (Render, 7/24 link)
+
+Bilgisayar kapalıyken de çalışan kalıcı bir link için depo, [Render](https://render.com) üzerinde tek tıkla kurulacak şekilde hazırdır (`render.yaml`, `Dockerfile`):
+
+1. render.com'da GitHub hesabıyla oturum açın.
+2. **New → Blueprint** → bu depoyu seçin. Render, `render.yaml`'a göre uygulamayı ve PostgreSQL veritabanını oluşturur.
+3. İstenen gizli ayarları girin: `GEMINI_API_KEY`, `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` (en az 8 karakter). İlk yönetici bu bilgilerle açılır; kurgusal örnek veri otomatik yüklenir.
+4. Kurulum bitince `https://farkora-xxxx.onrender.com` gibi kalıcı bir adres verilir.
+
+Bundan sonra `main` dalına gönderilen her güncelleme sunucuya otomatik kurulur.
+
+**Ücretsiz paketin sınırları:** 15 dakika kullanılmayınca uyur, ilk açılış yaklaşık 1 dakika sürer. Bellek Whisper için yetmediğinden ses kayıtlarının yazıya dökülmesi örnek modda çalışır (yazılı, WhatsApp ve fotoğraflı seanslar tam çalışır). Ücretsiz veritabanının süresi sınırlıdır (Render'ın güncel koşullarına bakın). Yüklenen dosyalar yeniden başlatmada silinir; analiz sonuçları veritabanında kalır. Gerçek danışan verisi için ücretli paket ve ücretli yapay zekâ hesabı gerekir.
+
 ## Ayarlar (`.env`)
 
 | Ayar | Açıklama |
