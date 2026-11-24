@@ -6,8 +6,12 @@ cd /d "%~dp0"
 rem Farkora: her acilista GitHub'daki son surumu indirir, sonra uygulamayi baslatir.
 rem .env (anahtarlar) ve data (veriler) guncellemeden etkilenmez.
 
+set "GIT=git"
+where git >nul 2>nul || if exist "%ProgramFiles%\Git\cmd\git.exe" set "GIT=%ProgramFiles%\Git\cmd\git.exe"
+
 echo [1/3] Guncelleme kontrol ediliyor...
-git pull --ff-only
+ver >nul
+if exist ".git" "%GIT%" pull --ff-only
 if errorlevel 1 echo     Guncelleme alinamadi (internet yok olabilir). Mevcut surumle devam ediliyor.
 
 echo [2/3] Paketler kontrol ediliyor...

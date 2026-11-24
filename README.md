@@ -56,6 +56,10 @@ Ajanlar zincir gibi çalışır: analiz ajanının bulduğu gelişim alanı müf
 
 ## Kurulum (Windows)
 
+**Tek dosyayla kurulum (önerilen):** GitHub sayfasında **Code → Download ZIP** ile indirin, ZIP'i bir klasöre çıkarın ve **`Farkora_Kurulum.bat`** dosyasına çift tıklayın. Python, Git, FFmpeg ve tüm paketler otomatik kurulur; `.env` oluşturulur, otomatik güncelleme bağlanır ve masaüstüne **Farkora** simgesi eklenir. En sonda yalnızca yapay zekâ anahtarını `.env` dosyasına yazmak kalır; dosya bunun adımlarını da gösterir. Windows “bilgisayarınızı korudu” uyarısı verirse **Ek bilgi → Yine de çalıştır**.
+
+Elle kurulum:
+
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
