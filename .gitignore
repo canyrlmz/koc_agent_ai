@@ -6,3 +6,4 @@ data/
 *.db
 *.log
 .claude/settings.local.json
+yayin_linki.txt

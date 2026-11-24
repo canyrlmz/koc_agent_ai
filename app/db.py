@@ -825,3 +825,26 @@ def self_guided_requests() -> list[dict]:
     """Koçla eşleşmek isteyen koçsuz mod kullanıcıları (yönetici görür)."""
     return all_rows("""SELECT c.id, c.name, c.age, p.updated_at FROM self_profiles p JOIN clients c ON c.id = p.client_id
                        WHERE p.coach_request = 1 AND c.coach_id IS NULL ORDER BY p.updated_at DESC""")
+
+
+# --- Danışan silme (yönetici veya danışanın koçu) ---------------------------------
+
+# client_id taşıyan tüm tablolar; sıra önemli (önce bağımlı kayıtlar)
+_CLIENT_TABLES = ("observations", "commitments", "notifications", "agent_actions", "tasks", "checkins",
+                  "trainings", "images", "meeting_bots", "self_messages", "self_profiles", "sessions")
+
+
+def delete_client(client_id: int) -> list[str]:
+    """Danışanı ve ona ait her şeyi siler. Silinmesi gereken yüklenmiş dosyaların yollarını döndürür."""
+    with connect() as conn:
+        files = [r["audio_path"] for r in conn.execute("SELECT audio_path FROM sessions WHERE client_id = ?", (client_id,))
+                 if r["audio_path"]]
+        files += [r["path"] for r in conn.execute("SELECT path FROM images WHERE client_id = ?", (client_id,))]
+        session_ids = [r["id"] for r in conn.execute("SELECT id FROM sessions WHERE client_id = ?", (client_id,))]
+        for table in _CLIENT_TABLES:
+            conn.execute(f"DELETE FROM {table} WHERE client_id = ?", (client_id,))
+        for u in conn.execute("SELECT id FROM users WHERE client_id = ?", (client_id,)).fetchall():
+            conn.execute("DELETE FROM auth_sessions WHERE user_id = ?", (u["id"],))
+        conn.execute("DELETE FROM users WHERE client_id = ?", (client_id,))
+        conn.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+    return files + [f"kareler:{sid}" for sid in session_ids]

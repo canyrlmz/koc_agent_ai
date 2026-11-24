@@ -560,3 +560,37 @@ def test_safety_patterns():
     assert is_crisis("kendimi öldürmek")
     assert not is_crisis("Sınavdan çok korkuyorum")
     assert not is_crisis("Yeni insanlarla tanışmak istiyorum")
+
+
+def test_admin_role_change_and_client_delete():
+    from app import db
+
+    k = client.post("/api/users", json={"name": "Yetki Koç", "email": "yetki@test.local", "role": "koc",
+                                        "password": "sifre-yetki-1"}).json()
+    org = client.post("/api/organizations", json={"name": "Yetki Kurumu"}).json()
+    koc = _login("yetki@test.local", "sifre-yetki-1")
+    mine = koc.post("/api/clients", json={"name": "Silinecek Danışan", "consent": True}).json()
+    other = client.post("/api/clients", json={"name": "Başka Danışan", "consent": True}).json()
+
+    # Koç yetki veremez; yönetici verir
+    assert koc.patch(f"/api/users/{k['id']}", json={"role": "admin"}).status_code == 403
+    me = client.get("/api/auth/state").json()["user"]
+    assert client.patch(f"/api/users/{me['id']}", json={"role": "koc"}).status_code == 400  # kendi yetkisi
+    assert client.patch(f"/api/users/{k['id']}", json={"role": "kurum"}).status_code == 400  # kurum seçilmeli
+    assert client.patch(f"/api/users/{k['id']}", json={"role": "admin"}).json()["role"] == "admin"
+    assert any(c["id"] == other["id"] for c in koc.get("/api/clients").json())  # artık her şeyi görür
+    client.patch(f"/api/users/{k['id']}", json={"role": "koc"})
+
+    # Koç yalnızca kendi danışanını silebilir; silinince tüm verisi gider
+    s = _upload(mine["id"], "1. seans").json()
+    client.post(f"/api/clients/{mine['id']}/account", json={"email": "silinecek@test.local", "password": "danisan-sil-1"})
+    assert koc.delete(f"/api/clients/{other['id']}").status_code == 403
+    assert koc.delete(f"/api/clients/{mine['id']}").status_code == 200
+    assert client.get(f"/api/clients/{mine['id']}").status_code == 404
+    assert db.get_session(s["id"]) is None and not db.list_tasks(mine["id"])
+    assert TestClient(app).post("/api/auth/login", json={"email": "silinecek@test.local", "password": "danisan-sil-1"}).status_code == 400
+
+    # Kurum yöneticisi yapılan koçun danışanları koçsuz kalır
+    kept = koc.post("/api/clients", json={"name": "Kalan Danışan", "consent": True}).json()
+    assert client.patch(f"/api/users/{k['id']}", json={"role": "kurum", "organization_id": org["id"]}).status_code == 200
+    assert client.get(f"/api/clients/{kept['id']}").json()["coach_id"] is None

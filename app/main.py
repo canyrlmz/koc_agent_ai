@@ -273,6 +273,31 @@ def reset_user_password(user_id: int, body: PasswordIn, _: dict = Depends(admin_
     return {"ok": True}
 
 
+class RoleIn(BaseModel):
+    role: Literal["admin", "koc", "kurum"]
+    organization_id: int | None = None
+
+
+@app.patch("/api/users/{user_id}")
+def change_role(user_id: int, body: RoleIn, me: dict = Depends(admin_only)):
+    """Yetki verme: bir hesabı yönetici, koç veya kurum yöneticisi yapar."""
+    user = auth.get_user(user_id)
+    if not user:
+        raise HTTPException(404, "Kullanıcı bulunamadı.")
+    if user_id == me["id"]:
+        raise HTTPException(400, "Kendi yetkinizi değiştiremezsiniz (başka bir yönetici değiştirebilir).")
+    if user["role"] == "danisan":
+        raise HTTPException(400, "Danışan girişlerinin yetkisi değiştirilemez; koç ya da yönetici için yeni kullanıcı açın.")
+    org_id = body.organization_id if body.role == "kurum" else None
+    if body.role == "kurum" and not (org_id and db.get_organization(org_id)):
+        raise HTTPException(400, "Kurum yöneticisi için bir kurum seçin.")
+    if user["role"] in ("admin", "koc") and body.role == "kurum":
+        with db.connect() as conn:  # kurum yöneticisi danışan yönetemez: danışanları koçsuz kalır
+            conn.execute("UPDATE clients SET coach_id = NULL WHERE coach_id = ?", (user_id,))
+    db._update("users", user_id, {"role": body.role, "organization_id": org_id})
+    return auth.get_user(user_id)
+
+
 @app.delete("/api/users/{user_id}")
 def delete_user(user_id: int, me: dict = Depends(admin_only)):
     if user_id == me["id"]:
@@ -448,6 +473,19 @@ def update_client(client_id: int, body: ClientIn, user: dict = Depends(staff)):
     if user["role"] == "admin" and data["coach_id"] is None:
         data["coach_id"] = current.get("coach_id")
     return db.update_client(client_id, **data)
+
+
+@app.delete("/api/clients/{client_id}")
+def delete_client(client_id: int, user: dict = Depends(staff)):
+    """Danışanı ve tüm verisini (seanslar, kayıtlar, eğitimler, planlar, giriş hesabı) kalıcı olarak siler.
+    Yönetici her danışanı, koç yalnızca kendi danışanını silebilir."""
+    managed_client(client_id, user)
+    for f in db.delete_client(client_id):
+        if f.startswith("kareler:"):
+            shutil.rmtree(video.frame_dir(int(f.split(":")[1])), ignore_errors=True)
+        else:
+            Path(f).unlink(missing_ok=True)
+    return {"ok": True}
 
 
 @app.get("/api/clients/{client_id}")
@@ -1067,6 +1105,18 @@ def image_file(image_id: int, user: dict = Depends(staff)):
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    """Siteyi masaüstüne / telefona uygulama olarak yüklemek için."""
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Kök adresten sunulur ki tüm siteyi kapsasın
+    return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

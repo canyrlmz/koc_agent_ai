@@ -804,11 +804,15 @@ async function viewClient(id, tab) {
             <button class="link-btn" id="account-btn">${c.account ? "Şifre sıfırla" : "Giriş oluştur"}</button></span>
         </div>
       </div>
-      <button class="btn btn-secondary" id="edit-client">${icon("edit")}Düzenle</button>
+      <div class="profile-actions">
+        <button class="btn btn-secondary" id="edit-client">${icon("edit")}Düzenle</button>
+        <button class="btn btn-secondary btn-sm danger" id="delete-client">${icon("x")}Sil</button>
+      </div>
     </div>
     ${tabs(`#/danisan/${id}`, CLIENT_TABS.map(([k, l]) => [k, l, counts[k]]), tab)}
     <section id="tab-body"></section>`;
   $("#edit-client").addEventListener("click", () => clientForm(c));
+  $("#delete-client").addEventListener("click", () => deleteClientForm(c));
   $("#account-btn").addEventListener("click", () => accountForm(c));
 
   const body = $("#tab-body");
@@ -1892,10 +1896,12 @@ async function viewUsers() {
         <td>${u.client_name ? `<a href="#/danisan/${u.client_id}">${esc(u.client_name)}</a>` : u.organization_name ? esc(u.organization_name) : `<span class="muted">—</span>`}</td>
         <td class="muted">${fmtDate(u.created_at, false)}</td>
         <td class="actions">${u.id === ME.id ? `<span class="muted small">Siz</span>` : `
+          ${u.role === "danisan" ? "" : `<button class="btn btn-secondary btn-sm" data-role-user="${u.id}">Yetki</button>`}
           <button class="btn btn-secondary btn-sm" data-reset="${u.id}">Şifre sıfırla</button>
           <button class="btn btn-secondary btn-sm danger" data-del="${u.id}" data-name="${esc(u.name)}">Sil</button>`}</td>
       </tr>`).join("")}
     </tbody></table></section>`;
+  $$("[data-role-user]", page).forEach((b) => b.addEventListener("click", () => roleForm(users.find((u) => u.id === Number(b.dataset.roleUser)))));
   $$("[data-reset]", page).forEach((b) => b.addEventListener("click", () => openModal("Şifre sıfırla",
     field("Yeni şifre", `<input name="password" type="password" required minlength="8" autocomplete="new-password">`, "En az 8 karakter"),
     async (fd) => { await sendJSON(`/api/users/${b.dataset.reset}/password`, { password: fd.get("password") }); toast("Şifre sıfırlandı"); }, "Sıfırla")));
@@ -1905,6 +1911,32 @@ async function viewUsers() {
     toast("Kullanıcı silindi");
     route();
   }));
+}
+
+async function roleForm(u) {
+  const orgs = await api("/api/organizations");
+  openModal(`Yetki: ${esc(u.name)}`, `
+    ${field("Rol", `<select name="role" id="rf-role">${options([["koc", "Koç: kendi danışanlarını yönetir"], ["admin", "Yönetici: her şeyi görür ve yönetir"], ["kurum", "Kurum yöneticisi: anonim kurum paneli"]], u.role)}</select>`)}
+    <div id="rf-org" ${u.role === "kurum" ? "" : "hidden"}>${field("Kurum", `<select name="organization_id"><option value="">Seçin</option>${options(orgs.map((o) => [o.id, o.name]), u.organization_id)}</select>`)}</div>
+    <p class="muted small">Koç, kurum yöneticisi yapılırsa danışanları koçsuz kalır; yönetici onları başka koça atayabilir.</p>`,
+  async (fd) => {
+    await sendJSON(`/api/users/${u.id}`, { role: fd.get("role"), organization_id: fd.get("organization_id") ? Number(fd.get("organization_id")) : null }, "PATCH");
+    toast("Yetki güncellendi");
+    route();
+  }, "Kaydet");
+  $("#rf-role").addEventListener("change", (e) => { $("#rf-org").hidden = e.target.value !== "kurum"; });
+}
+
+function deleteClientForm(c) {
+  openModal("Danışanı sil", `
+    <p><b>${esc(c.name)}</b> ve ona ait <b>tüm veriler</b> (seanslar, kayıtlar, raporlar, eğitimler, planlar, mesajlar, giriş hesabı) kalıcı olarak silinecek. Bu işlem <b>geri alınamaz</b>.</p>
+    ${field("Onaylamak için danışanın adını yazın", `<input name="confirm" autocomplete="off">`)}`,
+  async (fd) => {
+    if ((fd.get("confirm") || "").trim() !== c.name.trim()) throw new Error("Ad eşleşmiyor.");
+    await api(`/api/clients/${c.id}`, { method: "DELETE" });
+    toast("Danışan silindi");
+    location.hash = "#/danisanlar";
+  }, "Kalıcı olarak sil");
 }
 
 async function userForm() {
@@ -2156,3 +2188,5 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderThem
 renderThemeButtons();
 // self.js (koçsuz mod) da yüklendikten sonra başla
 window.addEventListener("DOMContentLoaded", startApp);
+// "Uygulama olarak yükle" (masaüstü / telefon) desteği
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});

@@ -63,7 +63,13 @@ copy .env.example .env
 .venv\Scripts\python run.py
 ```
 
-Tarayıcıda **http://localhost:8765** adresini açın. FFmpeg kurulu olmalıdır. İlk açılışta yönetici hesabı oluşturulur; “Örnek veriyle göster” kurgusal verileri yükler.
+Tarayıcıda **http://localhost:8765** adresini açın.
+
+**Kolay başlatma ve otomatik güncelleme:** Proje `git clone` ile indirildiyse `Farkora_Baslat.bat` dosyasına çift tıklamak yeterli. Her açılışta GitHub'daki son sürümü indirir, eksik paketleri kurar ve uygulamayı tarayıcıda açar. `.env` ve `data/` güncellemeden etkilenmez; yeni veritabanı alanları açılışta otomatik eklenir.
+
+**Masaüstü kısayolu:** `Masaustu_Kisayolu_Olustur.bat` masaüstüne Farkora simgeli bir kısayol ekler. Site tarayıcıda açıkken adres çubuğundaki “Uygulama olarak yükle” ile de masaüstü / telefon uygulaması gibi kurulabilir.
+
+**İnternete açmak (geçici link):** `Farkora_Yayinla.bat` uygulamayı başlatır ve Cloudflare geçici tüneliyle herkese açık bir link verir (link panoya kopyalanır). `cloudflared` kurulu olmalıdır (`winget install Cloudflare.cloudflared`). Link her açılışta değişir ve yalnızca pencere ve bilgisayar açıkken çalışır. FFmpeg kurulu olmalıdır. İlk açılışta yönetici hesabı oluşturulur; “Örnek veriyle göster” kurgusal verileri yükler.
 
 ## Ayarlar (`.env`)
 
